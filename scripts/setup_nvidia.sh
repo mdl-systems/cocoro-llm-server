@@ -186,6 +186,16 @@ Pin: origin developer.download.nvidia.com
 Pin-Priority: 600
 EOF
 
+    # ── Debian 13 (Trixie) SHA1互換性ワークアラウンド ─────────────────────────
+    # sqv (Sequoia PGP) が 2026-02-01以降 SHA1署名を拒否するため
+    # NVIDIAリポジトリに対してのみ WeakSignatures を許可する
+    cat > /etc/apt/apt.conf.d/99nvidia-weak-sig << 'APT_CONF'
+# NVIDIA CUDA リポジトリの SHA1署名を許可 (Debian 13 Trixie sqv対策)
+# 参照: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1054941
+Acquire::https::developer.download.nvidia.com::AllowWeakSignatures "true";
+APT_CONF
+    log_ok "SHA1署名ワークアラウンド設定: /etc/apt/apt.conf.d/99nvidia-weak-sig"
+
     apt-get update -y
     log_ok "NVIDIAリポジトリの追加完了"
 }
