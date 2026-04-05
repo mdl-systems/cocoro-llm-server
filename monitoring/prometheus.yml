@@ -1,0 +1,55 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'cocoro-llm-server'
+
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers: []  # アラートマネージャー未使用（ファイルログのみ）
+
+scrape_configs:
+  # ── vLLM Primary (Llama 4 Scout) ─────────────────────────────────────────────
+  - job_name: 'vllm-primary'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          model: 'llama4-scout'
+          instance: 'primary'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # ── vLLM Secondary (Qwen 3.5 32B) ────────────────────────────────────────────
+  - job_name: 'vllm-secondary'
+    static_configs:
+      - targets: ['host.docker.internal:8081']
+        labels:
+          model: 'qwen-32b'
+          instance: 'secondary'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # ── LiteLLM Proxy ─────────────────────────────────────────────────────────────
+  - job_name: 'litellm'
+    static_configs:
+      - targets: ['litellm:4000']
+        labels:
+          instance: 'gateway'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # ── Prometheus 自身 ──────────────────────────────────────────────────────────
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ── ホストシステム (node_exporter) ───────────────────────────────────────────
+  # node_exporterがインストール済みの場合
+  - job_name: 'node'
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+        labels:
+          instance: 'llm-server-host'
+    scrape_interval: 30s

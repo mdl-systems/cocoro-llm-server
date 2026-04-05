@@ -1,0 +1,69 @@
+groups:
+  - name: vllm_alerts
+    interval: 30s
+    rules:
+      # ── vLLM Primaryダウン ─────────────────────────────────────────────────
+      - alert: VLLMPrimaryDown
+        expr: up{job="vllm-primary"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vLLM Primary (Scout) がダウンしています"
+          description: "Llama 4 Scout (port 8080) が1分以上応答していません"
+
+      # ── vLLM SecondaryダウN ────────────────────────────────────────────────
+      - alert: VLLMSecondaryDown
+        expr: up{job="vllm-secondary"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vLLM Secondary (Qwen) がダウンしています"
+          description: "Qwen 3.5 32B (port 8081) が2分以上応答していません"
+
+      # ── LiteLLMダウン ─────────────────────────────────────────────────────
+      - alert: LiteLLMDown
+        expr: up{job="litellm"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LiteLLM Gateway がダウンしています"
+          description: "APIゲートウェイ (port 8000) が1分以上応答していません"
+
+      # ── 高レイテンシ ──────────────────────────────────────────────────────
+      - alert: HighRequestLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(vllm:e2e_request_latency_seconds_bucket[5m])
+          ) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "リクエストレイテンシが高い (p95 > 30秒)"
+          description: "過去5分間のp95レイテンシが30秒を超えています"
+
+      # ── GPU使用率高止まり ─────────────────────────────────────────────────
+      - alert: HighGPUMemoryUsage
+        expr: |
+          (nvidia_gpu_memory_used_bytes / nvidia_gpu_memory_total_bytes) > 0.95
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "VRAM使用率が95%超"
+          description: "VRAMの残りが少なくなっています。OOMリスクあり"
+
+      # ── エラー率高騰 ──────────────────────────────────────────────────────
+      - alert: HighErrorRate
+        expr: |
+          rate(litellm_requests_metric_total{status_code=~"5.."}[5m]) /
+          rate(litellm_requests_metric_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "エラー率が10%超"
+          description: "過去3分間のエラー率が10%を超えています"

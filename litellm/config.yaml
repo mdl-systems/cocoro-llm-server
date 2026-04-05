@@ -1,0 +1,101 @@
+model_list:
+  # ── Primary: Llama 4 Scout 109B ─────────────────────────────────────────────
+  # エイリアス gpt-4o → 複雑な推論・コード・長文・cocoro人格処理
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/llama4-scout
+      api_base: "http://192.168.50.112:8080/v1"
+      api_key: "dummy"    # vLLMはキー不要だが必須項目のためdummy値
+      max_tokens: 32768
+      timeout: 120
+      stream_timeout: 120
+
+  # ── Secondary: Qwen 3.5 32B ─────────────────────────────────────────────────
+  # エイリアス gpt-4o-mini → 短文・高速・日本語会話
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/qwen-32b
+      api_base: "http://192.168.50.112:8081/v1"
+      api_key: "dummy"
+      max_tokens: 16384
+      timeout: 60
+      stream_timeout: 60
+
+  # ── Fallback: Anthropic Claude ───────────────────────────────────────────────
+  # エイリアス claude-sonnet → フォールバック・品質保証
+  - model_name: claude-sonnet
+    litellm_params:
+      model: claude-sonnet-4-5
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+      max_tokens: 8192
+      timeout: 60
+
+  # ── 直接アクセス用エイリアス ──────────────────────────────────────────────────
+  - model_name: llama4-scout
+    litellm_params:
+      model: openai/llama4-scout
+      api_base: "http://192.168.50.112:8080/v1"
+      api_key: "dummy"
+
+  - model_name: qwen-32b
+    litellm_params:
+      model: openai/qwen-32b
+      api_base: "http://192.168.50.112:8081/v1"
+      api_key: "dummy"
+
+# ── ルーティング設定 ──────────────────────────────────────────────────────────
+router_settings:
+  routing_strategy: simple-shuffle
+  # フォールバック: Primary失敗時にSecondaryへ
+  fallbacks:
+    - gpt-4o:
+        - gpt-4o-mini
+    - llama4-scout:
+        - qwen-32b
+  # ヘルスチェック間隔
+  model_group_alias:
+    gpt-4o: ["llama4-scout"]
+    gpt-4o-mini: ["qwen-32b"]
+
+# ── 一般設定 ──────────────────────────────────────────────────────────────────
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  database_url: null     # DB不使用（メモリ管理）
+
+  # CORS（cocoro-coreからのアクセス許可）
+  allow_requests_on_db_unavailable: true
+
+  # リクエストタイムアウト
+  request_timeout: 120
+
+# ── ロギング ──────────────────────────────────────────────────────────────────
+litellm_settings:
+  # ログ先（Dockerコンテナではstdoutが推奨）
+  log_level: "INFO"
+
+  # トークン使用量を追跡
+  success_callback: []
+  failure_callback: []
+
+  # Prometheusメトリクス有効化
+  callbacks: ["prometheus"]
+
+  # レートリミット（ユーザーあたり）
+  default_team_settings:
+    max_parallel_requests: 10
+    rpm_limit: 100         # Requests Per Minute
+    tpm_limit: 1000000     # Tokens Per Minute
+
+  # キャッシュ（同一プロンプトの重複リクエスト削減）
+  cache: false   # vLLMのKVキャッシュに任せる
+
+  # ドロップパラメータ（非対応パラメータを無視して落とさない）
+  drop_params: true
+
+  # ストリーミングデフォルト
+  num_retries: 2
+  request_timeout: 120
+
+environment_variables:
+  LITELLM_MASTER_KEY: "os.environ/LITELLM_MASTER_KEY"
+  ANTHROPIC_API_KEY: "os.environ/ANTHROPIC_API_KEY"
