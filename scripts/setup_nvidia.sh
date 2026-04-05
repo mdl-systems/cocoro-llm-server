@@ -143,7 +143,6 @@ install_dependencies() {
         gnupg2 \
         apt-transport-https \
         ca-certificates \
-        software-properties-common \
         pkg-config
 
     log_ok "依存パッケージのインストール完了"
