@@ -32,7 +32,7 @@
 
 | Component | Technology | Port |
 |---|---|---|
-| 推論エンジン | vLLM | :8080（Scout）/ :8081（Qwen） |
+| 推論エンジン | vLLM (Blackwell build) | :8080（Scout）/ :8081（Qwen） |
 | APIゲートウェイ | LiteLLM Proxy | :8000（OpenAI互換） |
 | リバースプロキシ | Nginx | :80 |
 | モニタリング | Prometheus + Grafana | :9090 / :3000 |
