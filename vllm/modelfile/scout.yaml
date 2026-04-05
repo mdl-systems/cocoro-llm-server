@@ -1,0 +1,31 @@
+# vLLM Primary (Llama 4 Scout 109B) 設定
+# このファイルは参照用です。実際の起動パラメータは start_primary.sh で管理します。
+
+model: /models/llama4-scout
+served_model_name: llama4-scout
+host: 0.0.0.0
+port: 8080
+
+# GPU設定（RTX PRO 6000 Blackwell 96GB）
+gpu_memory_utilization: 0.58       # 55GB / 96GB
+tensor_parallel_size: 1            # シングルGPU
+dtype: bfloat16                    # Blackwellはbfloat16を推奨
+
+# コンテキスト・バッチ設定
+max_model_len: 32768               # 32K トークン
+max_num_seqs: 16                   # 同時リクエスト上限
+max_num_batched_tokens: 8192       # バッチあたりの最大トークン
+
+# Prefill最適化
+enable_chunked_prefill: true       # 長いプロンプトを分割してメモリ効率化
+
+# ロギング
+disable_log_requests: true         # リクエストログを無効化（パフォーマンス向上）
+
+# 信頼設定
+trust_remote_code: true            # モデル固有のコードを信頼
+
+# Blackwell固有メモ:
+# - TORCH_CUDA_ARCH_LIST="12.0" を環境変数で設定済み（start_primary.sh）
+# - vLLMはソースビルド版を使用（setup_vllm.sh）
+# - フラッシュアテンション: sm_120対応版が必要
