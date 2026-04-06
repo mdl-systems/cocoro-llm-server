@@ -164,8 +164,16 @@ check_gpu_memory() {
         --format=csv,noheader,nounits -i "${gpu_idx}" 2>/dev/null) \
         || die "nvidia-smi による GPU ${gpu_idx} の VRAM取得に失敗しました。"
 
+    # CSV: "index, name, total, free, used"
+    # IFS=',' のみ使用（スペースも区切りにすると GPU名が分割される）
     local idx gpu_name mem_total mem_free mem_used
-    IFS=', ' read -r idx gpu_name mem_total mem_free mem_used <<< "${raw}"
+    IFS=',' read -r idx gpu_name mem_total mem_free mem_used <<< "${raw}"
+    # 先頭の空白をトリム（nvidia-smi は ", " で区切るため）
+    idx=$(echo "$idx" | xargs)
+    gpu_name=$(echo "$gpu_name" | xargs)
+    mem_total=$(echo "$mem_total" | xargs)
+    mem_free=$(echo "$mem_free" | xargs)
+    mem_used=$(echo "$mem_used" | xargs)
 
     log_info "GPU ${idx}: ${gpu_name}"
     log_info "  Total : ${mem_total} MiB ($(( mem_total / 1024 )) GiB)"
