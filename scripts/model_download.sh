@@ -44,12 +44,15 @@ LOG_DIR="/var/log/cocoro-llm"
 LOG_FILE="${LOG_DIR}/model_download.log"
 
 # HuggingFaceリポジトリID
-# Primary: Llama 4 Scout 109B (MoE, 申請承認後にダウンロード可能)
-PRIMARY_HF_REPO="meta-llama/Llama-4-Scout-17B-16E-Instruct"
+# Primary: Llama 4 Scout GGUF Q3_K_M (Unsloth, 51.8GB, 55GB VRAM予算内)
+# ※ Q4_K_M (65.4GB) は 55GB 超過のため不可 → docs/VRAM_LAYOUT.md 参照
+PRIMARY_HF_REPO="unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF"
+PRIMARY_INCLUDE="*Q4_K_M*"
 # Secondary: Qwen 2.5 32B AWQ量子化版
 # ※ Qwen 3.5 は未リリース。Qwen 2.5 AWQ が 22GB VRAM 予算に最適
 # ※ vLLM が量子化を自動検出するため --quantization フラグ不要
 SECONDARY_HF_REPO="Qwen/Qwen2.5-32B-Instruct-AWQ"
+SECONDARY_INCLUDE=""
 
 # 引数解析
 DOWNLOAD_PRIMARY=true
@@ -120,33 +123,40 @@ download_model() {
     local model_name="$1"
     local hf_repo="$2"
     local target_dir="$3"
+    local include_pattern="${4:-}"
 
     log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log_info "ダウンロード: ${model_name}"
     log_info "  HF Repo : ${hf_repo}"
+    if [[ -n "$include_pattern" ]]; then
+    log_info "  フィルタ  : ${include_pattern}"
+    fi
     log_info "  保存先  : ${target_dir}"
     log_info "  開始時刻: $(date '+%H:%M:%S')"
     log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     mkdir -p "$target_dir"
 
-    # huggingface-cli でダウンロード（中断再開対応）
+    # ダウンロード引数構築（includeフィルタ指定時のみ追加）
+    local dl_args=(
+        "$hf_repo"
+        --local-dir "$target_dir"
+        --resume-download
+    )
+    if [[ -n "$include_pattern" ]]; then
+        dl_args+=(--include "$include_pattern")
+    fi
+
     if HUGGING_FACE_HUB_TOKEN="$HF_TOKEN" \
-       huggingface-cli download \
-        "$hf_repo" \
-        --local-dir "$target_dir" \
-        --resume-download \
-        --local-dir-use-symlinks False \
+       huggingface-cli download "${dl_args[@]}" \
         2>&1 | tee -a "$LOG_FILE"; then
 
         log_ok "${model_name}: ダウンロード完了 ($(date '+%H:%M:%S'))"
 
-        # チェックサム検証（サイズ確認）
         local total_size
         total_size=$(du -sh "$target_dir" 2>/dev/null | awk '{print $1}')
         log_ok "ダウンロードサイズ: ${total_size}"
 
-        # ファイル一覧
         log_info "ダウンロードファイル:"
         ls -lh "$target_dir"/*.safetensors 2>/dev/null | head -10 | tee -a "$LOG_FILE" || true
         ls -lh "$target_dir"/*.gguf        2>/dev/null | head -5  | tee -a "$LOG_FILE" || true
@@ -170,16 +180,18 @@ main() {
 
     if [[ "$DOWNLOAD_PRIMARY" == "true" ]]; then
         download_model \
-            "Llama 4 Scout 109B" \
+            "Llama 4 Scout Q3_K_M GGUF" \
             "$PRIMARY_HF_REPO" \
-            "$PRIMARY_MODEL_DIR"
+            "$PRIMARY_MODEL_DIR" \
+            "$PRIMARY_INCLUDE"
     fi
 
     if [[ "$DOWNLOAD_SECONDARY" == "true" ]]; then
         download_model \
-            "Qwen 3.5 32B" \
+            "Qwen 2.5 32B AWQ" \
             "$SECONDARY_HF_REPO" \
-            "$SECONDARY_MODEL_DIR"
+            "$SECONDARY_MODEL_DIR" \
+            "$SECONDARY_INCLUDE"
     fi
 
     log ""
