@@ -4,10 +4,12 @@
 # HuggingFaceからモデルをダウンロードするスクリプト
 #
 # ダウンロード対象:
-#   1. Llama 4 Scout 109B (AWQ量子化版)
-#      → /models/llama4-scout/ (推定: 60〜70GB)
-#   2. Qwen 3.5 32B (GPTQ量子化版)
-#      → /models/qwen35-32b/ (推定: 20〜25GB)
+#   1. Llama 4 Scout 17B-16E (MoE 109B相当, HuggingFace公式)
+#      repo: meta-llama/Llama-4-Scout-17B-16E-Instruct
+#      → /models/llama4-scout/ (推定: 30〜40GB BF16)
+#   2. Qwen 2.5 32B AWQ量子化版 (22GB VRAM 予算に収まる)
+#      repo: Qwen/Qwen2.5-32B-Instruct-AWQ
+#      → /models/qwen35-32b/ (推定: 18〜20GB)
 #
 # 前提:
 #   - huggingface-cli インストール済み
@@ -42,8 +44,12 @@ LOG_DIR="/var/log/cocoro-llm"
 LOG_FILE="${LOG_DIR}/model_download.log"
 
 # HuggingFaceリポジトリID
+# Primary: Llama 4 Scout 109B (MoE, 申請承認後にダウンロード可能)
 PRIMARY_HF_REPO="meta-llama/Llama-4-Scout-17B-16E-Instruct"
-SECONDARY_HF_REPO="Qwen/Qwen3.5-32B-Instruct"
+# Secondary: Qwen 2.5 32B AWQ量子化版
+# ※ Qwen 3.5 は未リリース。Qwen 2.5 AWQ が 22GB VRAM 予算に最適
+# ※ vLLM が量子化を自動検出するため --quantization フラグ不要
+SECONDARY_HF_REPO="Qwen/Qwen2.5-32B-Instruct-AWQ"
 
 # 引数解析
 DOWNLOAD_PRIMARY=true
