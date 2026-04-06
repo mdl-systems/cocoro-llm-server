@@ -1,0 +1,104 @@
+# =============================================================================
+# docker/docker-compose.dev.yml
+# 開発用 Docker Compose オーバーライド
+#
+# 使用方法:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# 本番 (docker-compose.yml) との差分:
+#   - LiteLLM: デバッグログ・ホットリロード有効
+#   - Prometheus: データ永続化をホストマウントに変更（コンテナ再作成でデータ保持）
+#   - Grafana: 匿名アクセス許可（開発確認を手軽に）
+#   - 全サービスのログ出力レベルを詳細化
+#   - vLLM (ホスト直接起動) へのデバッグ用ポートを追加露出
+# =============================================================================
+
+services:
+
+  litellm:
+    # ---- ローカルビルド (コード変更をすぐ反映) ----
+    # image を使わずにローカルの設定をマウント
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # 開発時は最詳細ログ
+      LITELLM_LOG: "DEBUG"
+      # カスタムルーター有効化
+      LITELLM_CUSTOM_ROUTER: "litellm.proxy_config.CocoroDynamicRouter"
+    command: >
+      --config /app/config.yaml
+      --port 4000
+      --num_workers 1
+      --detailed_debug
+    volumes:
+      - ../litellm/config.yaml:/app/config.yaml:ro
+      # カスタムルーターをコンテナに注入（ホットリロード可能）
+      - ../litellm/proxy_config.py:/app/litellm/proxy_config.py:ro
+      - /var/log/cocoro-llm:/var/log/cocoro-llm
+    ports:
+      - "8000:4000"
+      # 開発用: 直接4000番も露出（Swagger UI アクセス用）
+      - "4000:4000"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200m"
+        max-file: "10"
+
+  prometheus:
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # 開発時: ホストパスに永続化（docker compose down しても消えない）
+      - /var/lib/cocoro-prometheus:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      # 開発時は短め (7日) に設定してディスク節約
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+      # 開発時: ホットリロードAPI有効
+      - "--web.enable-admin-api"
+    ports:
+      - "9090:9090"
+
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-dev_password}
+      GF_SECURITY_ADMIN_USER: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://192.168.50.112:3000"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "/etc/grafana/provisioning/dashboards/llm_metrics.json"
+      # 開発時: 匿名アクセスを viewer として許可（ブラウザで即確認可能）
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      # ダッシュボード変更を管理者なしで保存可能
+      GF_DASHBOARDS_VERSIONS_TO_KEEP: "5"
+      # ログレベル詳細化
+      GF_LOG_LEVEL: "debug"
+      # プラグイン自動インストール（開発で便利なパネル）
+      GF_INSTALL_PLUGINS: "grafana-clock-panel,grafana-piechart-panel"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+
+  nginx:
+    # 開発時はNginxを無効化（直接ポートアクセスで開発速度優先）
+    # profiles を使って明示的に起動する場合のみ有効にする
+    profiles:
+      - with-nginx
+
+# ボリューム定義（本番の grafana_data を引き継ぐ）
+volumes:
+  grafana_data:
+    external: false
+
+# ---------------------------------------------------------------------------
+# 開発時専用ネットワーク設定（本番の cocoro-net と分離しない）
+# ---------------------------------------------------------------------------
+# 注意: 本番ネットワーク設定は docker-compose.yml の cocoro-net を使用
