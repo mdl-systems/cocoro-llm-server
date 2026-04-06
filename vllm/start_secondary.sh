@@ -44,9 +44,9 @@ fi
 # ---------------------------------------------------------------------------
 # 設定値（.envで上書き可能）
 # ---------------------------------------------------------------------------
-MODEL_PATH="${SECONDARY_MODEL_PATH:-/models/qwen35-32b-q5_k_m.gguf}"
-# GGUFを使う場合は tokenizer を明示指定
-TOKENIZER_PATH="${SECONDARY_TOKENIZER_PATH:-Qwen/Qwen2.5-32B-Instruct}"
+MODEL_PATH="${SECONDARY_MODEL_PATH:-/models/qwen35-32b}"
+# AWQモデルはトークナイザー内ずみ→モデルディレクトリのローカルパスを使用
+TOKENIZER_PATH="${SECONDARY_TOKENIZER_PATH:-${MODEL_PATH}}"
 HOST="${SECONDARY_HOST:-0.0.0.0}"
 PORT="${SECONDARY_PORT:-8081}"
 GPU_UTIL="${SECONDARY_GPU_UTIL:-0.23}"
@@ -77,8 +77,8 @@ export FLASHINFER_CUDA_ARCH_LIST="12.0"
 # マルチプロセスワーカー: spawn が Blackwell + PyTorch で最も安定
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
 
-# アテンションバックエンド: Primaryと同設定
-export VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-FLASHINFER}"
+# アテンションバックエンド: FlashInfer が利用可能なら優先使用、なければ XFORMERS
+export VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-XFORMERS}"
 
 # PCIe環境での設定（シングルGPU）
 export NCCL_P2P_DISABLE="${NCCL_P2P_DISABLE:-0}"
@@ -294,8 +294,7 @@ main() {
         `# ---- Chunked Prefill ----` \
         --enable-chunked-prefill \
         \
-        `# ---- Qwen 3.5 MoE 固有 ----` \
-        --enable-expert-parallel \
+        `# ---- Denseモデル設定 (Qwen 2.5 32BはMoEではなく Dense) ----` \
         --trust-remote-code \
         \
         `# ---- テンソル並列 (シングルGPU) ----` \
