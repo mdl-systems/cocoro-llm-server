@@ -1,0 +1,57 @@
+[Unit]
+Description=vLLM Secondary — Qwen 3.5 32B Q5_K_M (port 8081)
+Documentation=https://github.com/mdl-systems/cocoro-llm-server
+After=network.target nvidia-persistenced.service vllm-primary.service
+Wants=nvidia-persistenced.service
+# Primary の起動完了後に Secondary を起動する
+# ただし Primary が落ちても Secondary は動き続ける（Wants ≠ Requires）
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# ---- 環境変数 ----
+Environment="CUDA_HOME=/usr/local/cuda"
+Environment="TORCH_CUDA_ARCH_LIST=12.0"
+Environment="VLLM_ATTENTION_BACKEND=FLASHINFER"
+Environment="VLLM_WORKER_MULTIPROC_METHOD=spawn"
+Environment="CUDA_VISIBLE_DEVICES=0"
+Environment="NCCL_P2P_DISABLE=0"
+
+# PATH に CUDA と vLLM 仮想環境を含める
+Environment="PATH=/opt/vllm-env/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# ---- 実行 ----
+WorkingDirectory=/opt/cocoro-llm-server
+ExecStart=/bin/bash /opt/cocoro-llm-server/vllm/start_secondary.sh
+
+# ---- ログ ----
+StandardOutput=append:/var/log/cocoro-llm/vllm-secondary.log
+StandardError=append:/var/log/cocoro-llm/vllm-secondary.log
+
+# ---- リスタートポリシー ----
+Restart=on-failure
+RestartSec=30
+StartLimitIntervalSec=180
+StartLimitBurst=5
+
+# ---- タイムアウト ----
+# Qwen 3.5 32B はロードが速いため 5分で十分
+TimeoutStartSec=360
+TimeoutStopSec=60
+
+# ---- リソース制限 ----
+LimitNOFILE=1048576
+OOMScoreAdjust=-400
+
+# Secondary はやや優先度低め（Primary より先に OOM kill の候補になっても許容）
+# Primary OOMScoreAdjust=-500 より高い値にしているのはこのため
+
+# ---- セキュリティ ----
+NoNewPrivileges=false
+ProtectHome=false
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
