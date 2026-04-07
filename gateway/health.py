@@ -33,7 +33,7 @@ SERVICES = {
     },
     "vllm_secondary": {
         "url": "http://localhost:8081/health",
-        "name": "vLLM Secondary (Qwen 3.5 32B)",
+        "name": "vLLM Secondary (Qwen 2.5 32B AWQ)",
         "timeout": 10,
         "required": False,   # secondaryは任意
     },

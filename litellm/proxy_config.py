@@ -6,7 +6,7 @@ LiteLLM カスタムルーティングロジック
 役割:
   - プロンプトのトークン数・内容に基づいてモデルを自動選択
   - gpt-4o  → Primary (Llama 4 Scout 109B)  : 500トークン超 / コード / 推論
-  - gpt-4o-mini → Secondary (Qwen 3.5 32B)  : 短文 / 日本語 / 高速応答
+  - gpt-4o-mini → Secondary (Qwen 2.5 32B AWQ): 短文 / 日本語 / 高速応答
 
 LiteLLM への組み込み方:
   litellm_settings:
@@ -66,7 +66,7 @@ CONVERSATIONAL_KEYWORDS = [
 # モデルエイリアス
 # ---------------------------------------------------------------------------
 MODEL_PRIMARY   = "gpt-4o"       # Llama 4 Scout 109B
-MODEL_SECONDARY = "gpt-4o-mini"  # Qwen 3.5 32B
+MODEL_SECONDARY = "gpt-4o-mini"  # Qwen 2.5 32B AWQ
 
 _CODE_PATTERN         = re.compile("|".join(CODE_KEYWORDS), re.IGNORECASE | re.MULTILINE)
 _REASONING_PATTERN    = re.compile("|".join(REASONING_KEYWORDS), re.IGNORECASE | re.MULTILINE)
