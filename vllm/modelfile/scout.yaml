@@ -7,13 +7,13 @@ host: 0.0.0.0
 port: 8080
 
 # GPU設定（RTX PRO 6000 Blackwell 96GB）
-gpu_memory_utilization: 0.58       # 55GB / 96GB
+gpu_memory_utilization: 0.72       # 69GB / 96GB（Q4_K_M 65.4GB + KVキャッシュ）
 tensor_parallel_size: 1            # シングルGPU
 dtype: bfloat16                    # Blackwellはbfloat16を推奨
 
 # コンテキスト・バッチ設定
-max_model_len: 32768               # 32K トークン
-max_num_seqs: 16                   # 同時リクエスト上限
+max_model_len: 131072              # 128K トークン（Llama 4 Scout フル対応）
+max_num_seqs: 32                   # 同時リクエスト上限（MoEは多並列OK）
 max_num_batched_tokens: 8192       # バッチあたりの最大トークン
 
 # Prefill最適化

@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # ── 定数 ──────────────────────────────────────────────────────────────────────
 PRIMARY_MODEL   = "llama4-scout"    # Llama 4 Scout 109B
-SECONDARY_MODEL = "qwen-32b"        # Qwen 3.5 32B
+SECONDARY_MODEL = "qwen-32b"        # Qwen 2.5 32B AWQ
 
 PRIMARY_TOKEN_THRESHOLD = 500       # このトークン数以上はPrimary
 CODE_PATTERNS = re.compile(

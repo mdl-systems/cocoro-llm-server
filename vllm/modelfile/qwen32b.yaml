@@ -1,4 +1,4 @@
-# vLLM Secondary (Qwen 3.5 32B) 設定
+# vLLM Secondary (Qwen 2.5 32B AWQ) 設定
 # このファイルは参照用です。実際の起動パラメータは start_secondary.sh で管理します。
 
 model: /models/qwen35-32b
@@ -12,7 +12,7 @@ tensor_parallel_size: 1
 dtype: bfloat16
 
 # コンテキスト・バッチ設定
-max_model_len: 16384               # 16K（Qwenは16K推奨）
+max_model_len: 32768               # 32K（Qwen 2.5 AWQ は32K安定）
 max_num_seqs: 16
 max_num_batched_tokens: 4096
 
@@ -25,8 +25,8 @@ disable_log_requests: true
 # 信頼設定
 trust_remote_code: true
 
-# Qwen 3.5 32B メモ:
-# - Qwen 3.5 32Bはdenseモデル（MoEではない）
-# - --enable-expert-parallel は不要
+# Qwen 2.5 32B AWQ メモ:
+# - AWQ 4-bit量子化済み (~18GB)、gpu_util=0.23 で22GB確保
+# - Denseモデル（MoEではない）: --enable-expert-parallel 不要
 # - 日本語性能が高く、短文・会話に最適
-# - max_model_len は16384が安定（32768にするとKVキャッシュ不足の恐れ）
+# - max_model_len=32768 が安定（AWQのKVキャッシュ効率が良い）
