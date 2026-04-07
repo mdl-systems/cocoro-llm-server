@@ -66,7 +66,7 @@ class TestScoutQuality:
 
 
 class TestQwenQuality:
-    """gpt-4o-mini (Qwen 3.5 32B) 品質テスト"""
+    """gpt-4o-mini (Qwen 2.5 32B AWQ) 品質テスト"""
 
     @pytest.mark.asyncio
     async def test_japanese_fluency(self):
