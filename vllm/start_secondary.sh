@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # vllm/start_secondary.sh
-# Qwen 3.5 32B Q5_K_M — vLLM起動スクリプト (Secondary)
+# Qwen 2.5 32B AWQ — vLLM起動スクリプト (Secondary)
 #
 # ポート       : 8081
 # VRAM上限     : ~22GB (gpu-memory-utilization 0.23)
@@ -77,8 +77,8 @@ export FLASHINFER_CUDA_ARCH_LIST="12.0"
 # マルチプロセスワーカー: spawn が Blackwell + PyTorch で最も安定
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
 
-# アテンションバックエンド: FlashInfer が利用可能なら優先使用、なければ XFORMERS
-export VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-XFORMERS}"
+# アテンションバックエンド: FlashInfer（Primaryと共通、Blackwell SM_120対応済み）
+export VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-FLASHINFER}"
 
 # PCIe環境での設定（シングルGPU）
 export NCCL_P2P_DISABLE="${NCCL_P2P_DISABLE:-0}"
@@ -109,7 +109,7 @@ die()       { log_error "$*"; exit 1; }
 # ---------------------------------------------------------------------------
 print_banner() {
     log_info "======================================================"
-    log_info "  vLLM Secondary: Qwen 3.5 32B Q5_K_M"
+    log_info "  vLLM Secondary: Qwen 2.5 32B AWQ"
     log_info "  Endpoint  : http://${HOST}:${PORT}/v1"
     log_info "  GPU       : RTX PRO 6000 Blackwell (SM_120)"
     log_info "  VRAM予算  : ${GPU_UTIL} × 96GB ≈ 22GB"

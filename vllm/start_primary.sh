@@ -116,7 +116,7 @@ print_banner() {
     log_info "  vLLM Primary: Llama 4 Scout 109B Q4_K_M"
     log_info "  Endpoint  : http://${HOST}:${PORT}/v1"
     log_info "  GPU       : RTX PRO 6000 Blackwell (SM_120)"
-    log_info "  VRAM予算  : ${GPU_UTIL} × 96GB ≈ 55GB"
+    log_info "  VRAM予算  : ${GPU_UTIL} × 96GB ≈ 69GB (Q4_K_M 65.4GB + KV 3.7GB)"
     log_info "  Context   : ${MAX_MODEL_LEN} tokens"
     log_info "  MaxSeqs   : ${MAX_NUM_SEQS} 並列"
     log_info "  AttnBackend: ${VLLM_ATTENTION_BACKEND}"

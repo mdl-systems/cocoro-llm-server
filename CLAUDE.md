@@ -11,9 +11,9 @@
 トークン制限なしで使える、OpenAI互換のローカルLLM基盤。
 
 - ハードウェア: 192.168.50.112（RTX PRO 6000 Blackwell 96GB / i9 285K / 128GB RAM / 4TB NVMe）
-- Primary Model: Llama 4 Scout 109B Q4_K_M（VRAM 55GB）
-- Secondary Model: Qwen 3.5 32B Q5_K_M（VRAM 22GB）
-- KVキャッシュ: 10GB（5〜10同時セッション対応）
+- Primary Model: Llama 4 Scout 109B Q3_K_M GGUF（VRAM 69GB, gpu_util 0.72）
+- Secondary Model: Qwen 2.5 32B AWQ（VRAM 22GB, gpu_util 0.23）
+- KVキャッシュ: ~5GB予備（合計 0.95 → 91.2GB使用）
 - Gateway: LiteLLM（OpenAI互換 API :8000）
 
 ---
