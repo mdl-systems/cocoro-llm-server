@@ -6,9 +6,9 @@ model_list:
       model: openai/llama4-scout
       api_base: "http://192.168.50.112:8080/v1"
       api_key: "dummy"    # vLLMはキー不要だが必須項目のためdummy値
-      max_tokens: 32768
-      timeout: 120
-      stream_timeout: 120
+      max_tokens: 131072
+      timeout: 300
+      stream_timeout: 300
 
   # ── Secondary: Qwen 3.5 32B ─────────────────────────────────────────────────
   # エイリアス gpt-4o-mini → 短文・高速・日本語会話
@@ -27,8 +27,8 @@ model_list:
     litellm_params:
       model: claude-sonnet-4-5
       api_key: "os.environ/ANTHROPIC_API_KEY"
-      max_tokens: 8192
-      timeout: 60
+      max_tokens: 16000
+      timeout: 120
 
   # ── 直接アクセス用エイリアス ──────────────────────────────────────────────────
   - model_name: llama4-scout

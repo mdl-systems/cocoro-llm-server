@@ -5,8 +5,9 @@
 #
 # ダウンロード対象:
 #   1. Llama 4 Scout 17B-16E (MoE 109B相当, HuggingFace公式)
-#      repo: meta-llama/Llama-4-Scout-17B-16E-Instruct
-#      → /models/llama4-scout/ (推定: 30〜40GB BF16)
+#      repo: unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF
+#      filter: *Q4_K_M* → /models/llama4-scout/ (推定: 65.4GB)
+#      ※ gpu_util=0.72 → 69.1GB VRAM予算内に収まる
 #   2. Qwen 2.5 32B AWQ量子化版 (22GB VRAM 予算に収まる)
 #      repo: Qwen/Qwen2.5-32B-Instruct-AWQ
 #      → /models/qwen35-32b/ (推定: 18〜20GB)
@@ -44,8 +45,10 @@ LOG_DIR="/var/log/cocoro-llm"
 LOG_FILE="${LOG_DIR}/model_download.log"
 
 # HuggingFaceリポジトリID
-# Primary: Llama 4 Scout GGUF Q3_K_M (Unsloth, 51.8GB, 55GB VRAM予算内)
-# ※ Q4_K_M (65.4GB) は 55GB 超過のため不可 → docs/VRAM_LAYOUT.md 参照
+# Primary: Llama 4 Scout Q4_K_M GGUF (Unsloth, 65.4GB)
+# ※ gpu_util=0.72 → 69.1GB VRAM予算内 ✅ (Q4_K_M は採用)
+# ※ 旧設定(gpu_util=0.58, 55GB)では Q4_K_M 超過 → Q3_K_M を使用していたが
+#    Primary=0.72 に変更したため Q4_K_M が収まるようになった
 PRIMARY_HF_REPO="unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF"
 PRIMARY_INCLUDE="*Q4_K_M*"
 # Secondary: Qwen 2.5 32B AWQ量子化版
@@ -180,7 +183,7 @@ main() {
 
     if [[ "$DOWNLOAD_PRIMARY" == "true" ]]; then
         download_model \
-            "Llama 4 Scout Q3_K_M GGUF" \
+            "Llama 4 Scout Q4_K_M GGUF" \
             "$PRIMARY_HF_REPO" \
             "$PRIMARY_MODEL_DIR" \
             "$PRIMARY_INCLUDE"
