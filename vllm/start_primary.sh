@@ -139,7 +139,7 @@ check_nvidia_smi() {
     log_info "NVIDIA Driver: ${driver_version}"
 
     local cuda_version
-    cuda_version=$(nvidia-smi --query-gpu=cuda_version --format=csv,noheader | head -1)
+    cuda_version=$(nvidia-smi | grep -oP "CUDA Version: \K[0-9.]+" | head -1 || echo "不明")
     log_info "CUDA Version : ${cuda_version}"
 }
 
@@ -186,8 +186,8 @@ check_gpu_memory() {
 
     # 既存Computeプロセスの警告（異常終了の残骸など）
     local n_procs
-    n_procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader -i "${gpu_idx}" \
-        2>/dev/null | grep -c '[0-9]' || echo 0)
+    n_procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader -i "${gpu_idx}" 2>/dev/null | grep -c '[0-9]' 2>/dev/null || true)
+    n_procs=${n_procs:-0}
     if (( n_procs > 0 )); then
         log_warn "GPU ${gpu_idx} に既存の計算プロセスが ${n_procs} 件あります。"
         log_warn "必要であれば 'sudo fuser -k /dev/nvidia${gpu_idx}' で解放してください。"
@@ -299,8 +299,7 @@ main() {
         --tensor-parallel-size        1 \
         \
         `# ---- ログ・メトリクス ----` \
-        --enable-metrics \
-        --disable-log-requests \
+        --no-enable-log-requests \
         \
         2>&1 | tee -a "${LOG_FILE}"
 }
