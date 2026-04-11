@@ -301,8 +301,7 @@ main() {
         --tensor-parallel-size        1 \
         \
         `# ---- ログ・メトリクス ----` \
-        --enable-metrics \
-        --disable-log-requests \
+        --no-enable-log-requests \
         \
         2>&1 | tee -a "${LOG_FILE}"
 }
