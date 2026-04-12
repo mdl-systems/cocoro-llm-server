@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
 # vllm/start_primary.sh
-# Llama 4 Scout 109B Q4_K_M — vLLM起動スクリプト (Primary)
+# Llama 4 Scout 17B-16E FP8 (nvidia/Llama-4-Scout-17B-16E-Instruct-FP8)
+#   vLLM起動スクリプト (Primary)
 #
 # ポート       : 8080
-# VRAM上限     : ~55GB (gpu-memory-utilization 0.58)
+# VRAM上限     : ~55GB (gpu-memory-utilization 0.57)
 # アーキテクチャ: NVIDIA Blackwell RTX PRO 6000 (SM_120, CUDA 12.8+)
 # エイリアス   : gpt-4o (LiteLLM経由)
+# RAM          : 256GB DDR5 → CPUオフロード有効化可能
 #
 # 起動方法:
 #   sudo systemctl start vllm-primary   ← 通常運用
@@ -42,13 +44,15 @@ fi
 # ---------------------------------------------------------------------------
 # 設定値（.envで上書き可能）
 # ---------------------------------------------------------------------------
-MODEL_PATH="${PRIMARY_MODEL_PATH:-/models/llama4-scout-q4_k_m.gguf}"
-# GGUFを使う場合は tokenizer を明示指定（embedded tokenizer は不安定）
-TOKENIZER_PATH="${PRIMARY_TOKENIZER_PATH:-meta-llama/Llama-4-Scout-17B-16E-Instruct}"
+# FP8モデルはディレクトリを指定（safetensors + config.json が格納されている）
+MODEL_PATH="${PRIMARY_MODEL_PATH:-/models/llama4-scout}"
+# FP8モデルはトークナイザー内蔵 → MODEL_PATHと同じディレクトリを使用
+TOKENIZER_PATH="${PRIMARY_TOKENIZER_PATH:-${MODEL_PATH}}"
 HOST="${PRIMARY_HOST:-0.0.0.0}"
 PORT="${PRIMARY_PORT:-8080}"
-GPU_UTIL="${PRIMARY_GPU_UTIL:-0.58}"
-# 55GB VRAM予算 + FP8 KVキャッシュで 128K context を確保
+GPU_UTIL="${PRIMARY_GPU_UTIL:-0.57}"
+# 55GB VRAM予算 + FP8 KVキャッシュ（Blackwell HWネイティブ）で 128K context を確保
+# RAM 256GB 増設済み → CPU KVキャッシュオフロードで大規模並列セッション対応可能
 # より長い context が必要な場合は .env で MAX_MODEL_LEN をオーバーライド
 MAX_MODEL_LEN="${PRIMARY_MAX_MODEL_LEN:-131072}"
 MAX_NUM_SEQS="${PRIMARY_MAX_NUM_SEQS:-32}"
@@ -113,7 +117,8 @@ die()       { log_error "$*"; exit 1; }
 # ---------------------------------------------------------------------------
 print_banner() {
     log_info "======================================================"
-    log_info "  vLLM Primary: Llama 4 Scout 109B Q4_K_M"
+    log_info "  vLLM Primary: Llama 4 Scout 17B-16E FP8"
+    log_info "  Model     : nvidia/Llama-4-Scout-17B-16E-Instruct-FP8"
     log_info "  Endpoint  : http://${HOST}:${PORT}/v1"
     log_info "  GPU       : RTX PRO 6000 Blackwell (SM_120)"
     log_info "  VRAM予算  : ${GPU_UTIL} × 96GB ≈ 69GB (Q4_K_M 65.4GB + KV 3.7GB)"
@@ -121,6 +126,7 @@ print_banner() {
     log_info "  MaxSeqs   : ${MAX_NUM_SEQS} 並列"
     log_info "  AttnBackend: ${VLLM_ATTENTION_BACKEND}"
     log_info "  KV dtype  : fp8 (Blackwell HW native)"
+    log_info "  RAM       : 256GB DDR5 (CPUオフロード有効)"
     log_info "  Log       : ${LOG_FILE}"
     log_info "======================================================"
 }

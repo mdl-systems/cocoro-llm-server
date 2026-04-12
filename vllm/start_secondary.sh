@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
 # vllm/start_secondary.sh
-# Qwen 2.5 32B AWQ — vLLM起動スクリプト (Secondary)
+# Qwen 2.5 32B AWQ (Qwen/Qwen2.5-32B-Instruct-AWQ) — vLLM起動スクリプト (Secondary)
 #
 # ポート       : 8081
 # VRAM上限     : ~22GB (gpu-memory-utilization 0.23)
 # アーキテクチャ: NVIDIA Blackwell RTX PRO 6000 (SM_120, CUDA 12.8+)
 # エイリアス   : gpt-4o-mini (LiteLLM経由)
+# RAM          : 256GB DDR5 → CPUオフロード有効化可能
 #
 # 起動方法:
 #   sudo systemctl start vllm-secondary   ← 通常運用
@@ -110,6 +111,7 @@ die()       { log_error "$*"; exit 1; }
 print_banner() {
     log_info "======================================================"
     log_info "  vLLM Secondary: Qwen 2.5 32B AWQ"
+    log_info "  Model     : Qwen/Qwen2.5-32B-Instruct-AWQ"
     log_info "  Endpoint  : http://${HOST}:${PORT}/v1"
     log_info "  GPU       : RTX PRO 6000 Blackwell (SM_120)"
     log_info "  VRAM予算  : ${GPU_UTIL} × 96GB ≈ 22GB"
@@ -117,6 +119,7 @@ print_banner() {
     log_info "  MaxSeqs   : ${MAX_NUM_SEQS} 並列"
     log_info "  AttnBackend: ${VLLM_ATTENTION_BACKEND}"
     log_info "  KV dtype  : fp8 (Blackwell HW native)"
+    log_info "  RAM       : 256GB DDR5 (CPUオフロード有効)"
     log_info "  Log       : ${LOG_FILE}"
     log_info "======================================================"
 }
