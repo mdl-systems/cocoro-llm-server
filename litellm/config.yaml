@@ -1,5 +1,5 @@
 model_list:
-  # ── Primary: Llama 4 Scout 109B ─────────────────────────────────────────────
+  # ── Primary: Llama 4 Scout 17B-16E FP8 ──────────────────────────────────────
   # エイリアス gpt-4o → 複雑な推論・コード・長文・cocoro人格処理
   - model_name: gpt-4o
     litellm_params:
@@ -10,7 +10,7 @@ model_list:
       timeout: 300
       stream_timeout: 300
 
-  # ── Secondary: Qwen 3.5 32B ─────────────────────────────────────────────────
+  # ── Secondary: Qwen 2.5 32B AWQ ─────────────────────────────────────────────
   # エイリアス gpt-4o-mini → 短文・高速・日本語会話
   - model_name: gpt-4o-mini
     litellm_params:
