@@ -73,3 +73,11 @@ monitoring/grafana/data/
 
 # ── Prometheus データ ─────────────────────────────────────────────────────────
 monitoring/prometheus/data/
+
+# ── サーバー側ローカルファイル（シンボリックリンク等）────────────────────────
+cocoro-llm-server
+.env.save
+fp8_download.log
+fp8_download.pid
+qwen_download.log
+qwen_download.pid
