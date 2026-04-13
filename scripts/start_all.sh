@@ -148,13 +148,13 @@ main() {
     fi
 
     # コンテナが既に Running か確認
-    if docker compose -f "${COMPOSE_FILE}" ps --status running 2>/dev/null \
+    if docker compose -f "${COMPOSE_FILE}" --env-file "${REPO_DIR}/.env" ps --status running 2>/dev/null \
             | grep -q "litellm"; then
         log_warn "LiteLLM コンテナは既に起動中です。スキップします。"
-        log_warn "  再起動する場合: docker compose -f ${COMPOSE_FILE} restart"
+        log_warn "  再起動する場合: docker compose -f ${COMPOSE_FILE} --env-file ${REPO_DIR}/.env restart"
     else
         log_info "Docker Compose を起動中..."
-        docker compose -f "${COMPOSE_FILE}" up -d
+        docker compose -f "${COMPOSE_FILE}" --env-file "${REPO_DIR}/.env" up -d
         log_info "コンテナ起動要求完了。ヘルスチェック待機中..."
 
         wait_for_health \
