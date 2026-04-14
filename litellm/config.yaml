@@ -82,11 +82,6 @@ litellm_settings:
   # Prometheusメトリクス有効化
   callbacks: ["prometheus"]
 
-  # レートリミット（ユーザーあたり）
-  default_team_settings:
-    max_parallel_requests: 10
-    rpm_limit: 100         # Requests Per Minute
-    tpm_limit: 1000000     # Tokens Per Minute
 
   # キャッシュ（同一プロンプトの重複リクエスト削減）
   cache: false   # vLLMのKVキャッシュに任せる
