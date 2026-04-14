@@ -55,9 +55,6 @@ router_settings:
     - llama4-scout:
         - qwen-32b
   # ヘルスチェック間隔
-  model_group_alias:
-    gpt-4o: ["llama4-scout"]
-    gpt-4o-mini: ["qwen-32b"]
 
 # ── 一般設定 ──────────────────────────────────────────────────────────────────
 general_settings:
