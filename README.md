@@ -2,26 +2,26 @@
 
 > **mdl-systems 社内 LLM 推論サーバー**  
 > OpenAI 互換 API — トークン制限なし・完全プライベート  
-> Host: `192.168.50.112` | GPU: RTX PRO 6000 Blackwell 96GB
+> Host: `192.168.50.112` | GPU: RTX PRO 6000 Blackwell 94.96GB GDDR7
 
 ---
 
 ## アーキテクチャ概要
 
 ```
-クライアント (AntGravity / cocoro-core / 開発者)
+クライアント (cocoro-core / 開発者 / チームメンバー)
         │
         ▼  http://192.168.50.112:8000  (OpenAI互換)
    ┌─────────────┐
-   │  LiteLLM    │  ← モデルエイリアス / ルーティング / レートリミット
+   │  LiteLLM    │  ← モデルエイリアス / 認証 / レートリミット
    └──────┬──────┘
-          │
-    ┌─────┴──────┐
-    ▼            ▼
-:8080          :8081
-Llama 4 Scout  Qwen 3.5 32B     ← vLLM (ホスト直接起動)
-109B Q4_K_M    32B Q5_K_M
-≈55GB VRAM     ≈22GB VRAM
+          │ openai/qwen25-72b
+          ▼
+       :8080
+  Qwen 2.5 72B AWQ     ← vLLM (ホスト直接起動)
+  Weights: ~38GB
+  KV cache: ~47GB
+  合計: ~85GB / 94.96GB
 
           +
    ┌─────────────┐
@@ -34,13 +34,14 @@ Llama 4 Scout  Qwen 3.5 32B     ← vLLM (ホスト直接起動)
 
 ## モデルエイリアス
 
-| エイリアス | 実モデル | 用途 |
+| エイリアス | 実モデル | 備考 |
 |---|---|---|
-| `gpt-4o` | Llama 4 Scout 109B | コード・推論・長文 (>500トークン) |
-| `gpt-4o-mini` | Qwen 3.5 32B | 短文・日本語会話・高速応答 |
+| `gpt-4o` | Qwen 2.5 72B Instruct AWQ | メインエイリアス |
+| `gpt-4o-mini` | Qwen 2.5 72B Instruct AWQ | 互換性・既存クライアント対応 |
+| `qwen25-72b` | Qwen 2.5 72B Instruct AWQ | 直接アクセス用 |
 | `claude-sonnet` | Anthropic Claude | フォールバック (vLLM障害時) |
 
-ルーティングは自動判定。クライアントは `gpt-4o` / `gpt-4o-mini` を普通に使えばよい。
+クライアントは `gpt-4o` / `gpt-4o-mini` をそのまま使用可能。
 
 ---
 
@@ -57,53 +58,49 @@ cd cocoro-llm-server
 cp .env.example .env
 vim .env   # HF_TOKEN・LITELLM_MASTER_KEY・ANTHROPIC_API_KEY を設定
 
-# NVIDIA ドライバ + CUDA 12.8 のセットアップ (初回のみ)
-sudo bash scripts/setup_nvidia.sh
-
-# vLLM 仮想環境のセットアップ (初回のみ、30分程度)
-sudo bash scripts/setup_vllm.sh
-
-# モデルダウンロード (初回のみ、時間がかかる)
-bash scripts/model_download.sh
-
-# systemd サービス登録
-sudo bash scripts/install_systemd.sh
+# モデルダウンロード (~20GB、1〜2時間)
+source ~/.venv/cocoro-llm/bin/activate
+mkdir -p /models/qwen25-72b
+nohup huggingface-cli download \
+  Qwen/Qwen2.5-72B-Instruct-AWQ \
+  --local-dir /models/qwen25-72b \
+  --resume-download \
+  > ~/qwen72b_download.log 2>&1 &
+echo "PID: $!"
 ```
 
 ### 2. 起動
 
 ```bash
-# vLLM を systemd で起動 (推奨)
-sudo systemctl start vllm-primary
-# モデルロード完了を待つ (Llama 4 Scout は最大10分)
-sudo systemctl start vllm-secondary
+# vLLM 起動 (モデルロード完了まで最大15分)
+source ~/.venv/cocoro-llm/bin/activate
+nohup bash vllm/start_primary.sh > /tmp/vllm_primary.log 2>&1 &
+
+# 起動確認
+curl -sf http://localhost:8080/health && echo "✅ vLLM Ready"
 
 # Gateway + モニタリングを Docker で起動
-cd docker
-docker compose up -d
-
-# ヘルスチェック
-bash scripts/health_check.sh
+docker compose -f docker/docker-compose.yml --env-file .env up -d
 ```
 
 ### 3. 動作確認
 
 ```bash
-# LiteLLM 経由で推論テスト
-curl http://192.168.50.112:8000/v1/chat/completions \
-  -H "Authorization: Bearer <LITELLM_MASTER_KEY>" \
+# vLLM 直接テスト
+curl -s http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o",
-    "messages": [{"role": "user", "content": "こんにちは"}]
-  }'
+  -d '{"model":"qwen25-72b","messages":[{"role":"user","content":"日本語で自己紹介してください"}],"max_tokens":100}' \
+  | python3 -m json.tool | grep content
+
+# LiteLLM 経由テスト
+curl -s http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer mdl-llm-2026" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"稼働確認。一言で答えて"}],"max_tokens":50}' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ 完成:', d['choices'][0]['message']['content'])"
 
 # VRAM 確認
 nvidia-smi
-
-# サービス状態確認
-sudo systemctl status vllm-primary vllm-secondary
-docker compose ps
 ```
 
 ---
@@ -111,13 +108,12 @@ docker compose ps
 ## 開発環境での起動
 
 ```bash
-# 本番の代わりに開発用 Compose を使用
-cd docker
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# vLLM をフォアグラウンドで起動してログを直接確認
+source ~/.venv/cocoro-llm/bin/activate
+bash vllm/start_primary.sh
 
-# vLLM は手動で起動して stdout を直接確認
-bash vllm/start_primary.sh    # フォアグラウンドでログ確認可能
-bash vllm/start_secondary.sh
+# 本番の代わりに開発用 Compose を使用
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml --env-file .env up -d
 ```
 
 ---
@@ -126,10 +122,9 @@ bash vllm/start_secondary.sh
 
 ```bash
 # vLLM ログ
-sudo journalctl -u vllm-primary -f
-sudo journalctl -u vllm-secondary -f
 tail -f /var/log/cocoro-llm/vllm-primary.log
-tail -f /var/log/cocoro-llm/vllm-secondary.log
+# または nohup 起動時は
+tail -f /tmp/vllm_primary.log
 
 # LiteLLM ログ
 docker logs litellm -f
@@ -151,12 +146,6 @@ python tests/test_throughput.py --users 10 --duration 60
 
 # cocoro-core 連携テスト
 python tests/test_cocoro_compat.py
-
-# ルーティングロジックテスト
-python tests/test_gateway.py
-
-# カスタムルーター単体テスト
-python litellm/proxy_config.py
 ```
 
 ---
@@ -168,35 +157,37 @@ python litellm/proxy_config.py
 | Grafana ダッシュボード | http://192.168.50.112:3000 | admin / `GRAFANA_ADMIN_PASSWORD` |
 | Prometheus | http://192.168.50.112:9090 | なし |
 | LiteLLM Admin UI | http://192.168.50.112:8000/ui | `LITELLM_MASTER_KEY` |
-| vLLM Primary metrics | http://192.168.50.112:8080/metrics | なし |
-| vLLM Secondary metrics | http://192.168.50.112:8081/metrics | なし |
+| vLLM metrics | http://192.168.50.112:8080/metrics | なし |
 
 ---
 
-## VRAM 配分 (96GB)
+## VRAM 配分 (94.96GB GDDR7)
 
 | 用途 | 割当 | 備考 |
 |---|---|---|
-| Llama 4 Scout 109B Q4_K_M | 55GB (0.58) | Primary — コード・推論 |
-| Qwen 3.5 32B Q5_K_M | 22GB (0.23) | Secondary — 高速・日本語 |
-| KV キャッシュ (共用) | 10GB | 5〜10 同時セッション |
-| 予備 | 9GB | LoRA 実験等 |
+| Qwen 2.5 72B AWQ (weights) | ~38GB | AWQ Q4量子化 |
+| KV キャッシュ | ~47GB | 64並列 × 32K context |
+| 合計使用 | ~85GB (gpu_util=0.90) | 残り ~10GB バッファ |
 
-> **変更禁止**: VRAM 配分を変える場合は先に `docs/VRAM_LAYOUT.md` を更新すること。
+> `PRIMARY_GPU_UTIL=0.90` で VRAM 94.96GB の90% ≈ 85.5GB を確保。
 
 ---
 
-## cocoro-core との接続
+## チーム接続情報
 
-cocoro-core (`192.168.50.92`) の `.env` を以下に変更:
+```
+OPENAI_API_BASE = http://192.168.50.112:8000/v1
+OPENAI_API_KEY  = mdl-llm-2026
+model           = "gpt-4o" または "gpt-4o-mini"
+```
+
+cocoro-core (`192.168.50.92`) の `.env`:
 
 ```env
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://192.168.50.112:8000
 OLLAMA_MODEL=gpt-4o
 ```
-
-詳細は [docs/COCORO_INTEGRATION.md](docs/COCORO_INTEGRATION.md) を参照。
 
 ---
 
@@ -205,17 +196,18 @@ OLLAMA_MODEL=gpt-4o
 ### vLLM が起動しない
 
 ```bash
-# VRAM 確認
+# VRAM 確認 (他プロセスが残っていないか)
 nvidia-smi
+pkill -f "vllm" || true
 
 # ポート確認
-ss -tlnp | grep -E '8080|8081'
+ss -tlnp | grep 8080
 
 # 詳細ログ確認
-sudo journalctl -u vllm-primary --since "10 minutes ago"
+tail -50 /var/log/cocoro-llm/vllm-primary.log
 ```
 
-### アテンションバックエンドのクラッシュ (Blackwell)
+### アテンションバックエンドのクラッシュ (Blackwell SM_120)
 
 FlashInfer でクラッシュする場合、Triton バックエンドに切り替える:
 
@@ -223,17 +215,18 @@ FlashInfer でクラッシュする場合、Triton バックエンドに切り�
 # .env に追記
 VLLM_ATTENTION_BACKEND=TRITON_ATTN
 
-sudo systemctl restart vllm-primary vllm-secondary
+# vLLM 再起動
+pkill -f "vllm" && bash vllm/start_primary.sh
 ```
 
-### LiteLLM のルーティングを手動確認
+### LiteLLM のルーティングを確認
 
 ```bash
-# カスタムルーターのテスト
-python litellm/proxy_config.py
-
 # LiteLLM ログでルーティング判定を確認
-docker logs litellm 2>&1 | grep "\[router\]"
+docker logs litellm 2>&1 | grep -E "model|routing|error"
+
+# コンテナ再起動
+docker compose -f docker/docker-compose.yml --env-file .env restart litellm
 ```
 
 ---
@@ -242,16 +235,12 @@ docker logs litellm 2>&1 | grep "\[router\]"
 
 ```
 cocoro-llm-server/
-├── vllm/               # vLLM 起動スクリプト・モデル設定
-│   ├── start_primary.sh
-│   ├── start_secondary.sh
+├── vllm/               # vLLM 起動スクリプト
+│   ├── start_primary.sh    ← Qwen 2.5 72B AWQ 起動
 │   └── modelfile/
 ├── litellm/            # LiteLLM API ゲートウェイ設定
-│   ├── config.yaml
-│   └── proxy_config.py  ← カスタムルーティングロジック
-├── systemd/            # systemd サービスファイル
-│   ├── vllm-primary.service
-│   └── vllm-secondary.service
+│   ├── config.yaml         ← モデルエイリアス定義
+│   └── proxy_config.py
 ├── docker/             # Docker Compose (LiteLLM・監視系)
 │   ├── docker-compose.yml
 │   ├── docker-compose.dev.yml
@@ -269,7 +258,7 @@ cocoro-llm-server/
 - **クイックフィックス禁止** — 根本原因を特定してから修正する
 - **モデルウェイトを git にコミットしない** — `.gitignore` で除外済み
 - **API キーを平文でコードに書かない** — 必ず `.env` 経由
-- **VRAM 配分を変える場合は `docs/VRAM_LAYOUT.md` を先に更新**
+- **docker compose は必ず `--env-file .env` 付きで実行**
 
 ---
 
