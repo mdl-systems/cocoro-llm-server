@@ -1,26 +1,5 @@
 model_list:
-  # ── Qwen 2.5 72B Instruct AWQ — メインモデル ──────────────────────────────
-  # gpt-4o エイリアス → すべてこのモデルが応答
-  - model_name: gpt-4o
-    litellm_params:
-      model: openai/qwen25-72b
-      api_base: "http://host.docker.internal:8080/v1"
-      api_key: "dummy"
-      max_tokens: 32768
-      timeout: 300
-      stream_timeout: 300
-
-  # gpt-4o-mini エイリアス（互換性・既存クライアント対応）
-  - model_name: gpt-4o-mini
-    litellm_params:
-      model: openai/qwen25-72b
-      api_base: "http://host.docker.internal:8080/v1"
-      api_key: "dummy"
-      max_tokens: 32768
-      timeout: 300
-      stream_timeout: 300
-
-  # 直接アクセス用（モデル名を明示した場合）
+  # メインモデル: Qwen 2.5 72B AWQ
   - model_name: qwen25-72b
     litellm_params:
       model: openai/qwen25-72b
@@ -30,27 +9,23 @@ model_list:
       timeout: 300
       stream_timeout: 300
 
-  # フォールバック: Anthropic Claude（vLLMがダウン時のバックアップ）
+  # フォールバック: Anthropic Claude
   - model_name: claude-sonnet
     litellm_params:
       model: claude-sonnet-4-5
       api_key: "os.environ/ANTHROPIC_API_KEY"
       max_tokens: 16000
       timeout: 120
-      stream_timeout: 120
 
-# ── ルーティング設定 ──────────────────────────────────────────────────────────
 router_settings:
   routing_strategy: simple-shuffle
 
-# ── 一般設定 ──────────────────────────────────────────────────────────────────
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"
   database_url: null
   allow_requests_on_db_unavailable: true
   request_timeout: 300
 
-# ── ロギング・各種設定 ────────────────────────────────────────────────────────
 litellm_settings:
   log_level: "INFO"
   success_callback: []
