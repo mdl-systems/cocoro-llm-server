@@ -1,7 +1,7 @@
 # cocoro-llm-server
 
-> **mdl-systems 社内 LLM 推論サーバー**  
-> OpenAI 互換 API — トークン制限なし・完全プライベート  
+> **mdl-systems 社内 LLM 推論サーバー**
+> OpenAI 互換 API — トークン制限なし・完全プライベート
 > Host: `192.168.50.112` | GPU: RTX PRO 6000 Blackwell 94.96GB GDDR7
 
 ---
@@ -9,111 +9,130 @@
 ## アーキテクチャ概要
 
 ```
-クライアント (cocoro-core / 開発者 / チームメンバー)
+[クライアント群]
+  AntGravity / OpenHands / cocoro-core / チームメンバー
         │
-        ▼  http://192.168.50.112:8000  (OpenAI互換)
-   ┌─────────────┐
-   │  LiteLLM    │  ← モデルエイリアス / 認証 / レートリミット
-   └──────┬──────┘
-          │ openai/qwen25-72b
-          ▼
-       :8080
-  Qwen 2.5 72B AWQ     ← vLLM (ホスト直接起動)
-  Weights: ~38GB
-  KV cache: ~47GB
-  合計: ~85GB / 94.96GB
+        ▼ http://192.168.50.112:4000/v1  (OpenAI互換)
+  ┌──────────────────────────────────┐
+  │  LiteLLM Proxy :4000             │
+  │  smart-coder / qwen3-coder /     │
+  │  claude-sonnet (fallback)        │
+  └────────────┬─────────────────────┘
+               │
+       ┌───────┴────────┐
+       ▼                ▼
+  :8000 (local)    Anthropic API
+  vLLM Primary     (fallback only)
+  Qwen3-Coder-Next-FP8
+  VRAM: 70GB+17GB KV
+  Context: 256K tokens
 
-          +
-   ┌─────────────┐
-   │  Prometheus │ :9090  ← メトリクス収集
-   │  Grafana    │ :3000  ← ダッシュボード
-   └─────────────┘
+  ┌─────────────────┐
+  │ Open WebUI :3000 │ ← LiteLLM経由 (default: smart-coder)
+  └─────────────────┘
+
+  ┌─────────────────┐
+  │ Prometheus :9090 │
+  │ Grafana    :3100 │
+  └─────────────────┘
 ```
 
 ---
 
-## モデルエイリアス
+## モデルルーティング
 
-| エイリアス | 実モデル | 備考 |
+| モデル名 | バックエンド | 用途 |
 |---|---|---|
-| `gpt-4o` | Qwen 2.5 72B Instruct AWQ | メインエイリアス |
-| `gpt-4o-mini` | Qwen 2.5 72B Instruct AWQ | 互換性・既存クライアント対応 |
-| `qwen25-72b` | Qwen 2.5 72B Instruct AWQ | 直接アクセス用 |
-| `claude-sonnet` | Anthropic Claude | フォールバック (vLLM障害時) |
-
-クライアントは `gpt-4o` / `gpt-4o-mini` をそのまま使用可能。
+| `smart-coder` | ローカル優先 → Claude自動フォールバック | **推奨デフォルト** |
+| `qwen3-coder` | vLLM ローカル直結 | 高速・プライバシー重視 |
+| `claude-sonnet` | Anthropic API直接 | 難タスク・品質最優先 |
+| `gpt-4o` | qwen3-coderエイリアス | 後方互換 |
+| `gpt-4o-mini` | qwen3-coderエイリアス | 後方互換 |
 
 ---
 
-## クイックスタート
+## クイックスタート（リモートサーバー側）
 
-### 1. 初回セットアップ (サーバー側)
+### 1. 初回セットアップ
 
 ```bash
 # リポジトリ clone
-git clone git@github.com:mdl-systems/cocoro-llm-server.git
+git clone https://github.com/mdl-systems/cocoro-llm-server.git
 cd cocoro-llm-server
 
-# 環境変数設定
+# 環境変数設定（4つのキーを埋める）
 cp .env.example .env
-vim .env   # HF_TOKEN・LITELLM_MASTER_KEY・ANTHROPIC_API_KEY を設定
-
-# モデルダウンロード (~20GB、1〜2時間)
-source ~/.venv/cocoro-llm/bin/activate
-mkdir -p /models/qwen25-72b
-nohup huggingface-cli download \
-  Qwen/Qwen2.5-72B-Instruct-AWQ \
-  --local-dir /models/qwen25-72b \
-  --resume-download \
-  > ~/qwen72b_download.log 2>&1 &
-echo "PID: $!"
+vim .env
+# 必須: HF_TOKEN / ANTHROPIC_API_KEY / LITELLM_MASTER_KEY / OPEN_WEBUI_SECRET_KEY
 ```
 
-### 2. 起動
+### 2. 起動（Docker Compose）
 
 ```bash
-# vLLM 起動 (モデルロード完了まで最大15分)
-source ~/.venv/cocoro-llm/bin/activate
-nohup bash vllm/start_primary.sh > /tmp/vllm_primary.log 2>&1 &
+# 全サービス起動（初回はモデルDLで5〜15分かかる）
+docker compose up -d
 
-# 起動確認
-curl -sf http://localhost:8080/health && echo "✅ vLLM Ready"
-
-# Gateway + モニタリングを Docker で起動
-docker compose -f docker/docker-compose.yml --env-file .env up -d
+# 起動ログ確認（モデルロード完了まで待つ）
+docker compose logs -f vllm-primary
+# "Application startup complete." が出たら準備完了
 ```
 
 ### 3. 動作確認
 
 ```bash
-# vLLM 直接テスト
-curl -s http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"qwen25-72b","messages":[{"role":"user","content":"日本語で自己紹介してください"}],"max_tokens":100}' \
-  | python3 -m json.tool | grep content
+# ヘルスチェック
+curl http://192.168.50.112:4000/health/liveliness
 
-# LiteLLM 経由テスト
-curl -s http://localhost:8000/v1/chat/completions \
+# 推論テスト
+curl http://192.168.50.112:4000/v1/chat/completions \
   -H "Authorization: Bearer mdl-llm-2026" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"稼働確認。一言で答えて"}],"max_tokens":50}' \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print('✅ 完成:', d['choices'][0]['message']['content'])"
+  -d '{"model":"qwen3-coder","messages":[{"role":"user","content":"こんにちは"}]}'
 
-# VRAM 確認
-nvidia-smi
+# VRAM確認
+nvidia-smi --query-gpu=memory.used,memory.free,memory.total --format=csv
 ```
 
 ---
 
-## 開発環境での起動
+## Windowsから同期（deploy.ps1）
 
-```bash
-# vLLM をフォアグラウンドで起動してログを直接確認
-source ~/.venv/cocoro-llm/bin/activate
-bash vllm/start_primary.sh
+```powershell
+# 通常同期
+.\deploy.ps1
 
-# 本番の代わりに開発用 Compose を使用
-docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml --env-file .env up -d
+# 変更プレビューのみ（実際には転送しない）
+.\deploy.ps1 -DryRun
+
+# 同期後にDockerを自動再起動
+.\deploy.ps1 -Restart
+```
+
+---
+
+## チーム接続情報
+
+### OpenHands / AntGravity
+
+```
+API Base URL : http://192.168.50.112:4000/v1
+API Key      : <LITELLM_MASTER_KEY>
+Model        : smart-coder  (または qwen3-coder / gpt-4o)
+```
+
+### cocoro-core (`192.168.50.92`)
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_BASE=http://192.168.50.112:4000/v1
+OPENAI_API_KEY=<LITELLM_MASTER_KEY>
+OPENAI_MODEL=gpt-4o
+```
+
+### Open WebUI
+
+```
+http://192.168.50.112:3000
 ```
 
 ---
@@ -121,134 +140,55 @@ docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml --e
 ## ログ確認
 
 ```bash
-# vLLM ログ
-tail -f /var/log/cocoro-llm/vllm-primary.log
-# または nohup 起動時は
-tail -f /tmp/vllm_primary.log
-
-# LiteLLM ログ
-docker logs litellm -f
-
-# ヘルスチェックログ
-tail -f /var/log/cocoro-llm/health.log
+docker compose logs vllm-primary -f
+docker compose logs litellm -f
 ```
 
 ---
 
-## テスト
-
-```bash
-# 推論品質テスト
-python tests/test_inference.py
-
-# 並列負荷テスト (10同時リクエスト、60秒)
-python tests/test_throughput.py --users 10 --duration 60
-
-# cocoro-core 連携テスト
-python tests/test_cocoro_compat.py
-```
-
----
-
-## モニタリング
-
-| サービス | URL | 認証 |
-|---|---|---|
-| Grafana ダッシュボード | http://192.168.50.112:3000 | admin / `GRAFANA_ADMIN_PASSWORD` |
-| Prometheus | http://192.168.50.112:9090 | なし |
-| LiteLLM Admin UI | http://192.168.50.112:8000/ui | `LITELLM_MASTER_KEY` |
-| vLLM metrics | http://192.168.50.112:8080/metrics | なし |
-
----
-
-## VRAM 配分 (94.96GB GDDR7)
+## VRAM配分 (94.96GB GDDR7)
 
 | 用途 | 割当 | 備考 |
 |---|---|---|
-| Qwen 2.5 72B AWQ (weights) | ~38GB | AWQ Q4量子化 |
-| KV キャッシュ | ~47GB | 64並列 × 32K context |
-| 合計使用 | ~85GB (gpu_util=0.90) | 残り ~10GB バッファ |
+| Qwen3-Coder-Next-FP8 weights | ~70 GiB | FP8量子化 |
+| KV キャッシュ (fp8) | ~17 GiB | gpu_util=0.92 |
+| CUDA オーバーヘッド | ~8 GiB | バッファ |
 
-> `PRIMARY_GPU_UTIL=0.90` で VRAM 94.96GB の90% ≈ 85.5GB を確保。
-
----
-
-## チーム接続情報
-
-```
-OPENAI_API_BASE = http://192.168.50.112:8000/v1
-OPENAI_API_KEY  = mdl-llm-2026
-model           = "gpt-4o" または "gpt-4o-mini"
-```
-
-cocoro-core (`192.168.50.92`) の `.env`:
-
-```env
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://192.168.50.112:8000
-OLLAMA_MODEL=gpt-4o
-```
+> `PRIMARY_GPU_UTIL=0.92` で VRAM 94.96GB の92% ≈ 87.4GBを確保。
 
 ---
 
 ## トラブルシューティング
 
-### vLLM が起動しない
+### vLLM起動に失敗する
 
 ```bash
-# VRAM 確認 (他プロセスが残っていないか)
+# VRAM確認（他プロセスが残っていないか）
 nvidia-smi
 pkill -f "vllm" || true
 
 # ポート確認
-ss -tlnp | grep 8080
+ss -tlnp | grep 8000
 
-# 詳細ログ確認
-tail -50 /var/log/cocoro-llm/vllm-primary.log
+# ログ確認
+docker compose logs vllm-primary --tail=50
 ```
 
-### アテンションバックエンドのクラッシュ (Blackwell SM_120)
-
-FlashInfer でクラッシュする場合、Triton バックエンドに切り替える:
+### Blackwell SM_120でFlashInferがクラッシュ
 
 ```bash
-# .env に追記
+# .envに追記してFlashInferを無効化
 VLLM_ATTENTION_BACKEND=TRITON_ATTN
 
-# vLLM 再起動
-pkill -f "vllm" && bash vllm/start_primary.sh
+# 再起動
+docker compose down && docker compose up -d
 ```
 
-### LiteLLM のルーティングを確認
+### LiteLLMのルーティング確認
 
 ```bash
-# LiteLLM ログでルーティング判定を確認
-docker logs litellm 2>&1 | grep -E "model|routing|error"
-
-# コンテナ再起動
-docker compose -f docker/docker-compose.yml --env-file .env restart litellm
-```
-
----
-
-## ディレクトリ構成
-
-```
-cocoro-llm-server/
-├── vllm/               # vLLM 起動スクリプト
-│   ├── start_primary.sh    ← Qwen 2.5 72B AWQ 起動
-│   └── modelfile/
-├── litellm/            # LiteLLM API ゲートウェイ設定
-│   ├── config.yaml         ← モデルエイリアス定義
-│   └── proxy_config.py
-├── docker/             # Docker Compose (LiteLLM・監視系)
-│   ├── docker-compose.yml
-│   ├── docker-compose.dev.yml
-│   └── nginx/
-├── monitoring/         # Prometheus・Grafana 設定
-├── scripts/            # セットアップ・運用スクリプト
-├── tests/              # テスト一式
-└── docs/               # アーキテクチャ・運用ドキュメント
+docker compose logs litellm 2>&1 | grep -E "model|routing|error"
+docker compose restart litellm
 ```
 
 ---
@@ -258,7 +198,9 @@ cocoro-llm-server/
 - **クイックフィックス禁止** — 根本原因を特定してから修正する
 - **モデルウェイトを git にコミットしない** — `.gitignore` で除外済み
 - **API キーを平文でコードに書かない** — 必ず `.env` 経由
-- **docker compose は必ず `--env-file .env` 付きで実行**
+- **`--tool-call-parser qwen3_coder` を外さない** — OpenHandsが壊れる
+- **`--enable-prefix-caching` を外さない** — Open WebUI共存の生命線
+- **クライアントはポート4000経由** — 8000はLAN内デバッグのみ
 
 ---
 

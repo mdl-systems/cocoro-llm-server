@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
 # vllm/start_primary.sh
-# Qwen 2.5 72B Instruct AWQ — vLLM起動スクリプト (Single-Model構成)
+# Qwen3-Coder-Next-FP8 — vLLM起動スクリプト (Single-GPU構成)
 #
-# ポート       : 8080
-# VRAM使用     : ~38GB (weights) + ~50GB (KV cache) @ gpu_util=0.90
+# ポート       : 8000
+# VRAM使用     : ~70GB (weights) + ~20GB (KV cache fp8) @ gpu_util=0.92
 # アーキテクチャ: NVIDIA Blackwell RTX PRO 6000 (SM_120, CUDA 12.8)
-# エイリアス   : gpt-4o / gpt-4o-mini (LiteLLM経由)
+# エイリアス   : qwen3-coder / gpt-4o / gpt-4o-mini (LiteLLM経由)
 #
 # 使用方法:
 #   bash vllm/start_primary.sh          # 通常起動
@@ -29,18 +29,19 @@ fi
 # ---------------------------------------------------------------------------
 # 設定値（.envで上書き可能）
 # ---------------------------------------------------------------------------
-MODEL_PATH="${PRIMARY_MODEL_PATH:-/models/qwen25-72b}"
+MODEL_PATH="${PRIMARY_MODEL_PATH:-Qwen/Qwen3-Coder-Next-FP8}"
 TOKENIZER_PATH="${PRIMARY_TOKENIZER_PATH:-${MODEL_PATH}}"
 HOST="${PRIMARY_HOST:-0.0.0.0}"
-PORT="${PRIMARY_PORT:-8080}"
-GPU_UTIL="${PRIMARY_GPU_UTIL:-0.90}"
-MAX_MODEL_LEN="${PRIMARY_MAX_MODEL_LEN:-32768}"
-MAX_NUM_SEQS="${PRIMARY_MAX_NUM_SEQS:-64}"
+PORT="${PRIMARY_PORT:-8000}"
+GPU_UTIL="${PRIMARY_GPU_UTIL:-0.92}"
+MAX_MODEL_LEN="${PRIMARY_MAX_MODEL_LEN:-262144}"
+MAX_NUM_SEQS="${PRIMARY_MAX_NUM_SEQS:-32}"
 LOG_DIR="${LOG_DIR:-/var/log/cocoro-llm}"
 LOG_FILE="${LOG_DIR}/vllm-primary.log"
 VENV_DIR="${VLLM_VENV_DIR:-/home/mdl/.venv/cocoro-llm}"
+HF_HOME="${HF_CACHE_DIR:-/hf_cache}"
 
-SERVED_MODEL_NAME="qwen25-72b"
+SERVED_MODEL_NAME="qwen3-coder"
 
 # ---------------------------------------------------------------------------
 # Blackwell SM_120 最適化: 環境変数
@@ -48,6 +49,7 @@ SERVED_MODEL_NAME="qwen25-72b"
 export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
 export PATH="${CUDA_HOME}/bin:${PATH}"
 export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+export HF_HOME="${HF_HOME}"
 
 # vLLM Blackwell向け最適化
 export VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-FLASHINFER}"
@@ -72,27 +74,31 @@ die()       { log_error "$*"; exit 1; }
 # メイン
 # ---------------------------------------------------------------------------
 main() {
-    log_info "======================================================"
-    log_info "  vLLM Primary: Qwen 2.5 72B Instruct AWQ"
-    log_info "  Model     : Qwen/Qwen2.5-72B-Instruct-AWQ"
+    log_info "======================================================================"
+    log_info "  vLLM Primary: Qwen3-Coder-Next-FP8"
+    log_info "  Model     : ${MODEL_PATH}"
     log_info "  Endpoint  : http://0.0.0.0:${PORT}/v1"
-    log_info "  GPU       : RTX PRO 6000 Blackwell (SM_120)"
-    log_info "  VRAM予算  : ${GPU_UTIL} × 94.96GB ≈ $(echo "scale=0; (94.96 * ${GPU_UTIL%.*}${GPU_UTIL#*.} / 10) | bc" 2>/dev/null || echo ~85)GB"
-    log_info "  Weights   : ~38GB (AWQ Q4)"
-    log_info "  KV cache  : ~50GB (残余VRAM全活用)"
-    log_info "  Context   : ${MAX_MODEL_LEN} tokens"
+    log_info "  GPU       : RTX PRO 6000 Blackwell (SM_120, 96GB GDDR7)"
+    log_info "  VRAM予算  : ${GPU_UTIL} × 94.96GB ≈ 87.4GB"
+    log_info "  Weights   : ~70GB (FP8)"
+    log_info "  KV cache  : ~17GB (FP8 KV cache)"
+    log_info "  Context   : ${MAX_MODEL_LEN} tokens (256K)"
     log_info "  MaxSeqs   : ${MAX_NUM_SEQS} 並列"
     log_info "  RAM       : 256GB DDR5"
+    log_info "  HF Cache  : ${HF_HOME}"
     log_info "  Log       : ${LOG_FILE}"
-    log_info "======================================================"
+    log_info "======================================================================"
+
+    # --check フラグ処理
+    if [[ "${1:-}" == "--check" ]]; then
+        log_info "--check モード: 環境チェックのみ実行"
+    fi
 
     # --- GPU ドライバ確認 ---
     log_info "--- GPU ドライバ確認 ---"
     if command -v nvidia-smi &>/dev/null; then
         DRIVER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-        CUDA_VER=$(nvidia-smi --query-gpu=cuda_version --format=csv,noheader | head -1 2>/dev/null || echo "N/A")
         log_info "NVIDIA Driver: ${DRIVER}"
-        log_info "CUDA Version : ${CUDA_VER}"
     else
         die "nvidia-smi が見つかりません"
     fi
@@ -106,7 +112,7 @@ main() {
     log_info "GPU 0: ${GPU_NAME}"
     log_info "  Total : ${GPU_TOTAL} MiB ($(( GPU_TOTAL / 1024 )) GiB)"
     log_info "  Free  : ${GPU_FREE} MiB ($(( GPU_FREE / 1024 )) GiB)"
-    REQUIRED_MIB=38000
+    REQUIRED_MIB=71680  # 70GB
     if [[ ${GPU_FREE} -lt ${REQUIRED_MIB} ]]; then
         die "VRAM不足: 空き ${GPU_FREE} MiB < 必要 ${REQUIRED_MIB} MiB (他のプロセスを停止してください)"
     fi
@@ -128,25 +134,23 @@ main() {
     VLLM_VER=$("${PYTHON}" -c "import vllm; print(vllm.__version__)" 2>/dev/null || echo "不明")
     log_info "vLLM バージョン: ${VLLM_VER}"
 
-    # --- モデルファイル確認 ---
-    log_info "--- モデルファイル確認 ---"
-    log_info "MODEL_PATH: ${MODEL_PATH}"
-    if [[ ! -f "${MODEL_PATH}/config.json" ]]; then
-        die "config.json が見つかりません: ${MODEL_PATH}/config.json (ダウンロード完了を確認)"
-    fi
-    SHARD_COUNT=$(find "${MODEL_PATH}" -name "*.safetensors" -not -path "*cache*" | wc -l)
-    log_info "safetensors シャード数: ${SHARD_COUNT}"
+    [[ "${1:-}" == "--check" ]] && { log_ok "環境チェック完了"; exit 0; }
+
     log_ok "全チェック完了。vLLM Primary を起動します..."
 
     # ------------------------------------------------------------------
     # vLLM 起動引数
     #
-    # Qwen 2.5 72B AWQ + Blackwell SM_120 最適化:
-    #   --dtype auto          : モデル設定に従いAWQ整数演算を使用
-    #   --quantization awq    : AWQ量子化カーネルを明示指定
-    #   --gpu-memory-util 0.90: ~85GB確保 (weights 38GB + KV 47GB)
-    #   --max-model-len 32768 : 32K context (AWQ量子化済みで十分)
-    #   --max-num-seqs 64     : 64並列リクエスト
+    # Qwen3-Coder-Next-FP8 + Blackwell SM_120 最適化:
+    #   --dtype auto                  : FP8ウェイトをそのまま使用
+    #   --quantization fp8            : FP8量子化カーネル明示指定
+    #   --kv-cache-dtype fp8          : KVキャッシュもFP8（VRAM節約）
+    #   --gpu-memory-util 0.92        : ~87GB確保 (weights 70GB + KV 17GB)
+    #   --max-model-len 262144        : 256K context（Qwen3-Coderの強み）
+    #   --max-num-seqs 32             : 32並列リクエスト
+    #   --enable-chunked-prefill      : 長コンテキスト時のOOM防止
+    #   --enable-prefix-caching       : 繰り返しシステムプロンプトのKV再利用
+    #   --tool-call-parser qwen3_coder: OpenHandsツールコール必須フラグ
     # ------------------------------------------------------------------
     exec "${PYTHON}" -m vllm.entrypoints.openai.api_server \
         --model                  "${MODEL_PATH}" \
@@ -161,12 +165,17 @@ main() {
         --max-num-seqs           "${MAX_NUM_SEQS}" \
         --block-size             32 \
         \
-        `# ---- AWQ量子化設定 ----` \
+        `# ---- FP8量子化設定 ----` \
         --dtype                  auto \
-        --quantization           awq \
+        --quantization           fp8 \
+        --kv-cache-dtype         fp8 \
         \
-        `# ---- Chunked Prefill ----` \
+        `# ---- Chunked Prefill & Prefix Cache ----` \
         --enable-chunked-prefill \
+        --enable-prefix-caching \
+        \
+        `# ---- ツールコール（OpenHands必須）----` \
+        --tool-call-parser       qwen3_coder \
         \
         `# ---- モデル設定 ----` \
         --trust-remote-code \

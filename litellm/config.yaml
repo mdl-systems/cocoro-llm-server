@@ -1,15 +1,19 @@
 model_list:
-  # メインモデル: Qwen 2.5 72B AWQ
-  - model_name: qwen25-72b
+  # ──────────────────────────────────────────────────────────
+  # Route 1: qwen3-coder — ローカルvLLM（普段使い）
+  # ──────────────────────────────────────────────────────────
+  - model_name: qwen3-coder
     litellm_params:
-      model: openai/qwen25-72b
-      api_base: "http://host.docker.internal:8080/v1"
+      model: openai/qwen3-coder
+      api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 32768
       timeout: 300
       stream_timeout: 300
 
-  # フォールバック: Anthropic Claude
+  # ──────────────────────────────────────────────────────────
+  # Route 2: claude-sonnet — クラウド直接（難タスク手動指定）
+  # ──────────────────────────────────────────────────────────
   - model_name: claude-sonnet
     litellm_params:
       model: claude-sonnet-4-5
@@ -17,8 +21,44 @@ model_list:
       max_tokens: 16000
       timeout: 120
 
+  # ──────────────────────────────────────────────────────────
+  # Route 3: smart-coder — ローカル優先・失敗時Claudeフォールバック
+  # （Open WebUI default / 信頼性重視ワークフロー用）
+  # ──────────────────────────────────────────────────────────
+  - model_name: smart-coder
+    litellm_params:
+      model: openai/qwen3-coder
+      api_base: "http://vllm-primary:8000/v1"
+      api_key: "dummy"
+      max_tokens: 32768
+      timeout: 300
+      stream_timeout: 300
+    fallbacks:
+      - claude-sonnet
+
+  # ──────────────────────────────────────────────────────────
+  # OpenAI互換エイリアス（後方互換）
+  # ──────────────────────────────────────────────────────────
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/qwen3-coder
+      api_base: "http://vllm-primary:8000/v1"
+      api_key: "dummy"
+      max_tokens: 32768
+      timeout: 300
+
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/qwen3-coder
+      api_base: "http://vllm-primary:8000/v1"
+      api_key: "dummy"
+      max_tokens: 16384
+      timeout: 180
+
 router_settings:
   routing_strategy: simple-shuffle
+  num_retries: 2
+  retry_after: 5
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"

@@ -81,3 +81,7 @@ fp8_download.log
 fp8_download.pid
 qwen_download.log
 qwen_download.pid
+
+# ── HuggingFace キャッシュ（モデルウェイト、巨大ファイル）─────────────────────
+hf_cache/
+.cache/huggingface/
