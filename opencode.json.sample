@@ -1,0 +1,7 @@
+{
+  "baseURL": "http://192.168.50.112:4000/v1",
+  "apiKey": "YOUR_API_KEY_HERE",
+  "model": "smart-coder",
+  "maxRetries": 3,
+  "timeout": 60000
+}
