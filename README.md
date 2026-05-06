@@ -18,14 +18,14 @@
   │  smart-coder / qwen3-coder /     │
   │  claude-sonnet (fallback)        │
   └────────────┬─────────────────────┘
-               │
-       ┌───────┴────────┐
-       ▼                ▼
-  :8000 (local)    Anthropic API
-  vLLM Primary     (fallback only)
-  Qwen3-Coder-Next-FP8
-  VRAM: 70GB+17GB KV
-  Context: 256K tokens
+                │
+        ┌───────┴────────┐
+        ▼                ▼
+   :8000 (local)    Anthropic API
+   vLLM Primary     (fallback only)
+   Qwen3-Coder-Next-FP8
+   VRAM: 70GB+17GB KV
+   Context: 256K tokens
 
   ┌─────────────────┐
   │ Open WebUI :3000 │ ← LiteLLM経由 (default: smart-coder)
@@ -52,6 +52,8 @@
 ---
 
 ## クイックスタート（リモートサーバー側）
+
+#### 🚀 サーバー側（192.168.50.112）
 
 ### 1. 初回セットアップ
 
@@ -95,6 +97,8 @@ nvidia-smi --query-gpu=memory.used,memory.free,memory.total --format=csv
 
 ---
 
+#### 🔧 Windowsからデプロイ（ローカルPC）
+
 ## Windowsから同期（deploy.ps1）
 
 ```powershell
@@ -109,6 +113,8 @@ nvidia-smi --query-gpu=memory.used,memory.free,memory.total --format=csv
 ```
 
 ---
+
+#### 👥 チーム接続情報
 
 ## チーム接続情報
 
@@ -203,6 +209,29 @@ docker compose restart litellm
 - **クライアントはポート4000経由** — 8000はLAN内デバッグのみ
 
 ---
+
+## 🧑‍💻 Client Setup（クライアントセットアップ）
+
+このサーバーを使用するには、以下の2つのリポジトリが必要です：
+
+| リポジトリ | 役割 |
+|---|---|
+| [cocoro-llm-server](https://github.com/mdl-systems/cocoro-llm-server) | LLM推論エンジン（サーバー側） |
+| [cocoro-llm-client](https://github.com/mdl-systems/cocoro-llm-client) | クライアント設定（opencode.json等） |
+
+### クイックスタート（クライアントPC）
+
+```bash
+# クローン
+git clone https://github.com/mdl-systems/cocoro-llm-client.git
+cd cocoro-llm-client
+
+# 自動セットアップ（対話式）
+.\scripts\setup-client.ps1   # Windows
+./scripts/setup-client.sh    # Linux/WSL
+```
+
+詳細は [docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md) を参照。
 
 ## 関連リポジトリ
 
