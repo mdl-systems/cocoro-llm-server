@@ -1,0 +1,45 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "litellm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LiteLLM",
+      "options": {
+        "baseURL": "http://192.168.50.112:4000/v1",
+        "apiKey": "sk-mdl-ea48b54600e342608ed9f417fcb310d3"
+      },
+      "models": {
+        "qwen3-coder": {
+          "name": "Qwen3 Coder"
+        }
+      }
+    }
+  },
+  "model": "litellm/qwen3-coder",
+  "agent": {
+    "chat": {
+      "description": "設計・要約・相談用 (LiteLLM経由)",
+      "model": "litellm/qwen3-coder",
+      "prompt": "You are a helpful assistant.",
+      "tools": {
+        "read": true,
+        "write": false,
+        "edit": false,
+        "bash": false,
+        "webfetch": false
+      }
+    },
+    "build": {
+      "description": "実装・コーディング用 (LiteLLM経由)",
+      "model": "litellm/qwen3-coder",
+      "prompt": "You are a coding assistant that writes and edits code.",
+      "tools": {
+        "read": true,
+        "write": true,
+        "edit": true,
+        "bash": true,
+        "webfetch": false
+      }
+    }
+  }
+}

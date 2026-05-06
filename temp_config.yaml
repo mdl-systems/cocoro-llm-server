@@ -1,0 +1,47 @@
+model_list:
+  # メインモデル: Qwen 2.5 72B AWQ
+  - model_name: qwen25-72b
+    litellm_params:
+      model: openai/qwen25-72b
+      api_base: "http://host.docker.internal:8080/v1"
+      api_key: "dummy"
+      max_tokens: 32768
+      timeout: 300
+      stream_timeout: 300
+
+  # フォールバック: Anthropic Claude
+  - model_name: claude-sonnet
+    litellm_params:
+      model: claude-sonnet-4-5
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+      max_tokens: 16000
+      timeout: 120
+
+router_settings:
+  routing_strategy: simple-shuffle
+
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  database_url: null
+  allow_requests_on_db_unavailable: true
+  request_timeout: 300
+
+litellm_settings:
+  log_level: "INFO"
+  success_callback: []
+  failure_callback: []
+  callbacks: ["prometheus"]
+  cache: false
+  drop_params: true
+  num_retries: 2
+  request_timeout: 300
+
+environment_variables:
+  LITELLM_MASTER_KEY: "os.environ/LITELLM_MASTER_KEY"
+  ANTHROPIC_API_KEY: "os.environ/ANTHROPIC_API_KEY"
+
+model_info:
+  qwen25-72b:
+    max_tokens: 128000
+    max_input_tokens: 128000
+    max_output_tokens: 128000

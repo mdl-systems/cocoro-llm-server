@@ -47,6 +47,7 @@ services:
       --tensor-parallel-size 1
       --enable-chunked-prefill
       --enable-prefix-caching
+      --enable-auto-tool-choice
       --tool-call-parser qwen3_coder
       --trust-remote-code
       --no-enable-log-requests

@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # deploy.ps1 — cocoro-llm-server
 # Windows → リモートサーバ (192.168.50.112) ファイル同期スクリプト
 #
@@ -47,9 +47,10 @@ if (-not $LocalPath) {
     $LocalPath = Get-Location
 }
 
-# WSL形式のパスに変換
-$WslLocalPath = wsl wslpath -u "$LocalPath"
-$WslLocalPath = $WslLocalPath.Trim()
+# WSL形���のパスに変換
+$drive = $LocalPath.Substring(0,1).ToLower()
+$rest = $LocalPath.Substring(3) -replace '\\','/'
+$WslLocalPath = "/mnt/$drive/$rest"
 
 Write-Info "ローカルパス: $LocalPath"
 Write-Info "WSLパス: $WslLocalPath"
@@ -109,3 +110,4 @@ if (-not $DryRun) {
     Write-Info "LiteLLM API: http://${RemoteHost}:4000"
     Write-Info "ヘルスチェック: curl http://${RemoteHost}:4000/health/liveliness"
 }
+
