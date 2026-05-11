@@ -10,6 +10,13 @@
 *.p12
 secrets/
 
+# ── アーカイブ（旧ファイル・個人情報・APIキー含む）──────────────────────────
+_archive/
+
+# ── Claude Code 個人設定（PCごとの設定なのでコミットしない）─────────────────
+.claude/settings.local.json
+.claude/worktrees/
+
 # ── モデルウェイト（4TB NVMeに格納、gitで管理しない）────────────────────────
 /models/
 *.gguf

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # scripts/setup_docker.sh
-# Docker 環境セットアップスクリプト — 本番サーバー (192.168.50.112) 上で実行
+# Docker 環境セットアップスクリプト — cocoro-llm-server サーバー上で実行
 #
 # 実行内容:
 #   1. docker.io + docker-compose-plugin インストール

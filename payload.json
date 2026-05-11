@@ -1,5 +1,0 @@
-{
-  "model": "qwen25-72b",
-  "messages": [{"role": "user", "content": "Hello"}],
-  "max_tokens": 32000
-}

@@ -1,6 +1,0 @@
-
-model_info:
-  - qwen25-72b:
-      max_tokens: 128000
-      max_input_tokens: 128000
-      max_output_tokens: 128000

@@ -23,7 +23,7 @@ model_list:
 
   # ──────────────────────────────────────────────────────────
   # Route 3: smart-coder — ローカル優先・失敗時Claudeフォールバック
-  # （Open WebUI default / 信頼性重視ワークフロー用）
+  # （信頼性重視ワークフロー用 / 推奨デフォルト）
   # ──────────────────────────────────────────────────────────
   - model_name: smart-coder
     litellm_params:
@@ -35,6 +35,37 @@ model_list:
       stream_timeout: 300
     fallbacks:
       - claude-sonnet
+
+  # ──────────────────────────────────────────────────────────
+  # Claude Code対応エイリアス（ANTHROPIC_BASE_URL経由でローカルvLLMへ）
+  # Claude Codeが送るモデル名をそのまま受け取ってvLLMに流す
+  # ──────────────────────────────────────────────────────────
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: openai/qwen3-coder
+      api_base: "http://vllm-primary:8000/v1"
+      api_key: "dummy"
+      max_tokens: 32768
+      timeout: 300
+      stream_timeout: 300
+
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: openai/qwen3-coder
+      api_base: "http://vllm-primary:8000/v1"
+      api_key: "dummy"
+      max_tokens: 32768
+      timeout: 300
+      stream_timeout: 300
+
+  - model_name: claude-haiku-4-5-20251001
+    litellm_params:
+      model: openai/qwen3-coder
+      api_base: "http://vllm-primary:8000/v1"
+      api_key: "dummy"
+      max_tokens: 16384
+      timeout: 180
+      stream_timeout: 180
 
   # ──────────────────────────────────────────────────────────
   # OpenAI互換エイリアス（後方互換）
@@ -70,7 +101,7 @@ litellm_settings:
   log_level: "INFO"
   success_callback: []
   failure_callback: []
-  callbacks: ["prometheus"]
+  callbacks: []
   cache: false
   drop_params: true
   num_retries: 2

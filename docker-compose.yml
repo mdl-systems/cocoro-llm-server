@@ -1,6 +1,6 @@
 # =============================================================================
 # docker-compose.yml — cocoro-llm-server
-# Stack: vLLM (Qwen3-Coder-Next-FP8) + LiteLLM + Open WebUI
+# Stack: vLLM (Qwen3-Coder-Next-FP8) + LiteLLM
 #
 # 起動: docker compose up -d
 # ログ: docker compose logs -f vllm-primary
@@ -88,36 +88,32 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:4000/health/liveliness\")'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
 
   # ---------------------------------------------------------------------------
-  # Open WebUI — ローカルLLM UI
-  # Port: 3000
+  # Anthropic SSE Proxy — Claude Code向けSSE修正レイヤー
+  # Port: 4001 (Claude CodeのANTHROPIC_BASE_URLはここを向ける)
   # ---------------------------------------------------------------------------
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: open-webui
+  anthropic-proxy:
+    build: ./gateway
+    container_name: anthropic-proxy
     depends_on:
-      litellm:
-        condition: service_healthy
-    environment:
-      - OPENAI_API_BASE_URL=http://litellm:4000/v1
-      - OPENAI_API_KEY=${LITELLM_MASTER_KEY}
-      - WEBUI_SECRET_KEY=${OPEN_WEBUI_SECRET_KEY}
-      - WEBUI_AUTH=true
-      - DEFAULT_MODELS=smart-coder
-    volumes:
-      - open-webui-data:/app/backend/data
+      - litellm
     ports:
-      - "3000:8080"
+      - "4001:4001"
     restart: unless-stopped
-
-volumes:
-  open-webui-data:
+    healthcheck:
+      # bootstrap はプロキシ内モックのため LiteLLM の状態に依存しない
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:4001/bootstrap\", timeout=3)' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 networks:
   default:

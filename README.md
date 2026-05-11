@@ -1,41 +1,38 @@
 # cocoro-llm-server
 
-> **mdl-systems 社内 LLM 推論サーバー**
-> OpenAI 互換 API — トークン制限なし・完全プライベート
-> Host: `192.168.50.112` | GPU: RTX PRO 6000 Blackwell 94.96GB GDDR7
+> ローカルGPU搭載サーバー上でLLMを動かし、OpenAI互換APIとして提供するサーバーリポジトリ。  
+> `docker compose up -d` 1コマンドで推論サーバーが立ち上がります。
 
 ---
 
-## アーキテクチャ概要
+## アーキテクチャ
 
 ```
-[クライアント群]
-  AntGravity / OpenHands / cocoro-core / チームメンバー
-        │
-        ▼ http://192.168.50.112:4000/v1  (OpenAI互換)
-  ┌──────────────────────────────────┐
-  │  LiteLLM Proxy :4000             │
-  │  smart-coder / qwen3-coder /     │
-  │  claude-sonnet (fallback)        │
-  └────────────┬─────────────────────┘
-                │
-        ┌───────┴────────┐
-        ▼                ▼
-   :8000 (local)    Anthropic API
-   vLLM Primary     (fallback only)
-   Qwen3-Coder-Next-FP8
-   VRAM: 70GB+17GB KV
-   Context: 256K tokens
-
-  ┌─────────────────┐
-  │ Open WebUI :3000 │ ← LiteLLM経由 (default: smart-coder)
-  └─────────────────┘
-
-  ┌─────────────────┐
-  │ Prometheus :9090 │
-  │ Grafana    :3100 │
-  └─────────────────┘
+[OpenCode / Cursor / OpenHands]      [Claude Code]
+              │                              │
+              ▼ :4000/v1 (OpenAI互換)        ▼ :4001 (Anthropic互換)
+        ┌──────────────┐              ┌─────────────────────┐
+        │   LiteLLM    │◀─────────────│  anthropic-proxy    │
+        │    :4000     │              │  :4001              │
+        │              │              │  Anthropic ↔ OpenAI │
+        │ smart-coder  │              │  双方向変換         │
+        │ qwen3-coder  │              └─────────────────────┘
+        │ claude-sonnet│
+        └──────┬───────┘
+               │
+       ┌───────┴────────┐
+       ▼                ▼
+  :8000 (内部)      Anthropic API
+  vLLM Primary     (fallbackのみ)
+  Qwen3-Coder-Next-FP8
+  VRAM: 70GB+17GB KV
+  Context: 256K tokens
 ```
+
+**ポート構成:**
+- `:4000` LiteLLM — OpenAI互換 (OpenCode / Cursor 等)
+- `:4001` anthropic-proxy — Anthropic互換 (Claude Code)
+- `:8000` vLLM — サーバー内部デバッグのみ
 
 ---
 
@@ -45,101 +42,171 @@
 |---|---|---|
 | `smart-coder` | ローカル優先 → Claude自動フォールバック | **推奨デフォルト** |
 | `qwen3-coder` | vLLM ローカル直結 | 高速・プライバシー重視 |
-| `claude-sonnet` | Anthropic API直接 | 難タスク・品質最優先 |
-| `gpt-4o` | qwen3-coderエイリアス | 後方互換 |
-| `gpt-4o-mini` | qwen3-coderエイリアス | 後方互換 |
+| `claude-sonnet` | Anthropic API直接 | 難タスク・品質最優先（要 `ANTHROPIC_API_KEY`） |
+| `claude-sonnet-4-6` / `claude-opus-4-7` / `claude-haiku-4-5-20251001` | qwen3-coder エイリアス | **Claude Code 互換用**（内部はローカル vLLM） |
+| `gpt-4o` / `gpt-4o-mini` | qwen3-coder エイリアス | 後方互換 |
+
+> **Claude Code 用エイリアスの仕組み**: Claude Code は接続先のモデルとして `claude-sonnet-4-6` 等を指定してきますが、anthropic-proxy → LiteLLM の経路で**実体は qwen3-coder（ローカル vLLM）に流される**ように設定済みです。Claude Code 側のUIには「Sonnet 4.6」と表示されますが、応答しているのはローカルモデルです。
 
 ---
 
-## クイックスタート（リモートサーバー側）
+## ハードウェア要件
 
-#### 🚀 サーバー側（192.168.50.112）
+| 項目 | 要件 |
+|---|---|
+| GPU | NVIDIA GPU（VRAM 24GB以上推奨） |
+| VRAM（推奨） | 94GB以上（Qwen3-Coder-Next-FP8 フル精度用） |
+| OS | Linux（Ubuntu 22.04+ / Debian 12+） |
+| Docker | Docker Engine + NVIDIA Container Toolkit |
 
-### 1. 初回セットアップ
+---
+
+## ネットワーク前提
+
+クライアントPCがこのサーバーに到達できる必要があります。以下のどちらかの方法で接続環境を用意してください。
+
+### 推奨：Tailscale 経由（場所を問わず使える）
+
+サーバーPCに [Tailscale](https://tailscale.com/) をインストールし、クライアントPCと同じアカウントでログインします。物理ネットワークが違っても、外出先や別の家からも接続可能になります。
 
 ```bash
-# リポジトリ clone
-git clone https://github.com/mdl-systems/cocoro-llm-server.git
-cd cocoro-llm-server
-
-# 環境変数設定（4つのキーを埋める）
-cp .env.example .env
-vim .env
-# 必須: HF_TOKEN / ANTHROPIC_API_KEY / LITELLM_MASTER_KEY / OPEN_WEBUI_SECRET_KEY
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+# サーバーの Tailscale IP を確認（クライアントに伝える）
+tailscale ip -4
 ```
 
-### 2. 起動（Docker Compose）
+> サブネットルーティングを使う場合は `sudo tailscale up --advertise-routes=192.168.x.0/24` で LAN サブネットを共有できます。
+
+### 代替：同じLAN
+
+サーバーPCとクライアントPCが**同じWiFi/同じルーター下**にあれば、追加設定なしで接続できます。サーバーPCの LAN IP（`192.168.x.x`）を使います。
+
+> ⚠️ **インターネットへの直接公開は推奨しません。** APIキー漏洩・攻撃のリスクがあります。リモート利用は必ず Tailscale など VPN 経由にしてください。
+
+---
+
+## クイックスタート
+
+### 0. Linux 初回構築（既に NVIDIA + Docker 動いている場合はスキップ可）
+
+新規 Linux サーバーで初めて使う場合、ドライバと Docker を入れます。
 
 ```bash
-# 全サービス起動（初回はモデルDLで5〜15分かかる）
-docker compose up -d
+# 1) NVIDIA ドライバ + CUDA 12.8（Blackwell には CUDA 12.8 必須）
+sudo bash scripts/setup_nvidia.sh
+sudo reboot   # 完了後に必ず再起動
 
-# 起動ログ確認（モデルロード完了まで待つ）
+# 2) Docker + NVIDIA Container Toolkit
+sudo bash scripts/setup_docker.sh
+
+# 3) （推奨）Tailscale をインストール — リモート接続用
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+> **Tailscale を入れない場合は同じ LAN（同じ WiFi/ルーター下）からしか接続できません。**外出先や別ネットワークから使うなら、ここで入れておくのが楽です。詳細は下の「ネットワーク前提」を参照。
+
+### 1. リポジトリをクローン
+
+```bash
+git clone https://github.com/mdl-systems/cocoro-llm-server.git
+cd cocoro-llm-server
+```
+
+### 2. 初回セットアップ（1コマンドで完結）
+
+```bash
+bash scripts/first_setup.sh
+```
+
+実行すると対話式で以下を設定します:
+
+| 設定 | 説明 | 必須 |
+|---|---|---|
+| `LITELLM_MASTER_KEY` | クライアント接続用APIキー | **自動生成** |
+| `HF_TOKEN` | HuggingFaceトークン（モデルDL用） | モデル未DL時のみ |
+| `ANTHROPIC_API_KEY` | Claudeフォールバック用 | 任意 |
+
+セットアップ完了後、接続情報が自動表示されます:
+
+```
+╔══════════════════════════════════════════════════════════╗
+║   ✅ セットアップ完了！                                  ║
+╠══════════════════════════════════════════════════════════╣
+║   クライアントPCに以下の情報を入力してください           ║
+╠══════════════════════════════════════════════════════════╣
+║  Server IP : 192.168.x.x                                 ║
+║  API Key   : coco-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx       ║
+╚══════════════════════════════════════════════════════════╝
+```
+
+> 接続情報は後から `bash scripts/show_connection_info.sh` で再確認できます。
+
+### 3. 起動確認
+
+```bash
+# ヘルスチェック（vLLMの起動に5〜15分かかる場合があります）
+curl http://localhost:4000/health/liveliness
+
+# 起動ログを確認
 docker compose logs -f vllm-primary
 # "Application startup complete." が出たら準備完了
 ```
 
-### 3. 動作確認
+---
+
+## 手動セットアップ（上級者向け）
+
+`first_setup.sh` を使わず手動で設定する場合:
 
 ```bash
-# ヘルスチェック
-curl http://192.168.50.112:4000/health/liveliness
-
-# 推論テスト
-curl http://192.168.50.112:4000/v1/chat/completions \
-  -H "Authorization: Bearer mdl-llm-2026" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"qwen3-coder","messages":[{"role":"user","content":"こんにちは"}]}'
-
-# VRAM確認
-nvidia-smi --query-gpu=memory.used,memory.free,memory.total --format=csv
+cp .env.example .env
+vim .env
+# 必須: LITELLM_MASTER_KEY（任意の文字列に変更）
+# 任意: HF_TOKEN / ANTHROPIC_API_KEY
+docker compose up -d
 ```
 
 ---
 
-#### 🔧 Windowsからデプロイ（ローカルPC）
+## Windowsから設定を同期する（deploy.ps1）
 
-## Windowsから同期（deploy.ps1）
+Windowsで設定ファイルを編集してサーバーに反映する場合：
 
 ```powershell
-# 通常同期
-.\deploy.ps1
+# サーバーのユーザー名とIPを指定して同期
+.\deploy.ps1 -RemoteUser "your-user" -RemoteHost "192.168.x.x"
 
 # 変更プレビューのみ（実際には転送しない）
-.\deploy.ps1 -DryRun
+.\deploy.ps1 -RemoteUser "your-user" -RemoteHost "192.168.x.x" -DryRun
 
 # 同期後にDockerを自動再起動
-.\deploy.ps1 -Restart
+.\deploy.ps1 -RemoteUser "your-user" -RemoteHost "192.168.x.x" -Restart
 ```
 
 ---
 
-#### 👥 チーム接続情報
+## クライアントからの接続
 
-## チーム接続情報
+クライアント側の設定は **[cocoro-llm-client](https://github.com/mdl-systems/cocoro-llm-client)** リポジトリのスクリプト1本で完了します。OpenCode / Claude Code どちらでも対応。
 
-### OpenHands / AntGravity
-
-```
-API Base URL : http://192.168.50.112:4000/v1
-API Key      : <LITELLM_MASTER_KEY>
-Model        : smart-coder  (または qwen3-coder / gpt-4o)
-```
-
-### cocoro-core (`192.168.50.92`)
-
-```env
-LLM_PROVIDER=openai
-OPENAI_API_BASE=http://192.168.50.112:4000/v1
-OPENAI_API_KEY=<LITELLM_MASTER_KEY>
-OPENAI_MODEL=gpt-4o
-```
-
-### Open WebUI
+### OpenCode / Cursor / OpenHands 等（OpenAI互換クライアント）
 
 ```
-http://192.168.50.112:3000
+API Base URL : http://<SERVER_IP>:4000/v1
+API Key      : <LITELLM_MASTER_KEY の値>
+Model        : smart-coder
 ```
+
+### Claude Code
+
+```
+ANTHROPIC_BASE_URL : http://<SERVER_IP>:4001
+ANTHROPIC_API_KEY  : <LITELLM_MASTER_KEY の値>
+```
+
+`~/.claude/settings.json` の `env` ブロックにこの2つを書けば、PC全体・どのフォルダでも `claude` コマンドがローカルLLMを呼ぶようになります。クライアントリポジトリの `setup-claude-code.ps1` / `.sh` が自動でやってくれます。
 
 ---
 
@@ -152,7 +219,7 @@ docker compose logs litellm -f
 
 ---
 
-## VRAM配分 (94.96GB GDDR7)
+## VRAM配分（参考: RTX PRO 6000 Blackwell 94.96GB）
 
 | 用途 | 割当 | 備考 |
 |---|---|---|
@@ -160,7 +227,57 @@ docker compose logs litellm -f
 | KV キャッシュ (fp8) | ~17 GiB | gpu_util=0.92 |
 | CUDA オーバーヘッド | ~8 GiB | バッファ |
 
-> `PRIMARY_GPU_UTIL=0.92` で VRAM 94.96GB の92% ≈ 87.4GBを確保。
+> `.env` の `PRIMARY_GPU_UTIL` でVRAM割当を調整可能。
+
+---
+
+## モデルを変えたい場合
+
+vLLM は起動時にモデルを HuggingFace から自動ダウンロードします（初回 5〜15分）。  
+変更したい場合の難易度別の手順:
+
+### 🟢 同じ系統で別バージョン（Qwen3-Coder の別サイズ等）
+
+`.env` の編集だけでOK:
+
+```bash
+vim .env
+# PRIMARY_MODEL_PATH=Qwen/Qwen3-Coder-Next-FP8
+# ↓ 変更
+# PRIMARY_MODEL_PATH=Qwen/Qwen3-Coder-XXB-FP8
+
+docker compose down && docker compose up -d
+# 新モデルが自動DL → 起動
+```
+
+### 🟡 別の量子化方式（FP8以外: AWQ / GPTQ 等）
+
+`.env` に加えて `docker-compose.yml` の vLLM フラグも調整が必要:
+
+| フラグ | 用途 | 例 |
+|---|---|---|
+| `--quantization` | 量子化方式 | `fp8` / `awq` / `gptq` |
+| `--max-model-len` | 最大コンテキスト | モデルが対応する範囲 |
+| `--gpu-memory-utilization` | VRAM 使用率 | 0.5〜0.95 |
+
+### 🔴 別系統のモデル（Llama / Mistral / DeepSeek 等）
+
+ツールコールの形式が違うので、追加で以下も修正:
+
+1. `docker-compose.yml`:
+   - `--tool-call-parser qwen3_coder` → モデル対応のものに変更（Llama なら `llama3_json` 等）
+   - `--served-model-name qwen3-coder` → 新モデル名に
+2. `litellm/config.yaml`: モデル名参照を更新（`openai/qwen3-coder` 部分）
+
+### ⚠️ VRAM 上限
+
+GPU の VRAM（このサーバーは 94GB）を**超えるモデルは起動しません**。
+- ✅ ~70GB クラス（Qwen3-Coder-Next-FP8）
+- ✅ ~38GB クラス（Qwen2.5-72B-AWQ）
+- ❌ ~104GB（Llama-4-Scout-FP8）→ VRAM 超過で起動失敗
+- ❌ 数百GB級（DeepSeek-V3 671B 等）→ 動作不可
+
+事前にモデルカード（HuggingFace）でファイルサイズを確認してください。
 
 ---
 
@@ -171,11 +288,8 @@ docker compose logs litellm -f
 ```bash
 # VRAM確認（他プロセスが残っていないか）
 nvidia-smi
-pkill -f "vllm" || true
-
 # ポート確認
 ss -tlnp | grep 8000
-
 # ログ確認
 docker compose logs vllm-primary --tail=50
 ```
@@ -185,7 +299,6 @@ docker compose logs vllm-primary --tail=50
 ```bash
 # .envに追記してFlashInferを無効化
 VLLM_ATTENTION_BACKEND=TRITON_ATTN
-
 # 再起動
 docker compose down && docker compose up -d
 ```
@@ -201,43 +314,7 @@ docker compose restart litellm
 
 ## 絶対ルール
 
-- **クイックフィックス禁止** — 根本原因を特定してから修正する
 - **モデルウェイトを git にコミットしない** — `.gitignore` で除外済み
 - **API キーを平文でコードに書かない** — 必ず `.env` 経由
-- **`--tool-call-parser qwen3_coder` を外さない** — OpenHandsが壊れる
-- **`--enable-prefix-caching` を外さない** — Open WebUI共存の生命線
-- **クライアントはポート4000経由** — 8000はLAN内デバッグのみ
-
----
-
-## 🧑‍💻 Client Setup（クライアントセットアップ）
-
-このサーバーを使用するには、以下の2つのリポジトリが必要です：
-
-| リポジトリ | 役割 |
-|---|---|
-| [cocoro-llm-server](https://github.com/mdl-systems/cocoro-llm-server) | LLM推論エンジン（サーバー側） |
-| [cocoro-llm-client](https://github.com/mdl-systems/cocoro-llm-client) | クライアント設定（opencode.json等） |
-
-### クイックスタート（クライアントPC）
-
-```bash
-# クローン
-git clone https://github.com/mdl-systems/cocoro-llm-client.git
-cd cocoro-llm-client
-
-# 自動セットアップ（対話式）
-.\scripts\setup-client.ps1   # Windows
-./scripts/setup-client.sh    # Linux/WSL
-```
-
-詳細は [docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md) を参照。
-
-## 関連リポジトリ
-
-| リポジトリ | 役割 |
-|---|---|
-| [cocoro-core](https://github.com/mdl-systems/cocoro-core) | 人格 AI エンジン |
-| [cocoro-console](https://github.com/mdl-systems/cocoro-console) | 管理 UI |
-| [cocoro-agent](https://github.com/mdl-systems/cocoro-agent) | エージェント |
-| [cocoro-docs](https://github.com/mdl-systems/cocoro-docs) | ドキュメント |
+- **`--tool-call-parser qwen3_coder` を外さない** — ツールコールが壊れる
+- **OpenAI互換クライアントは :4000、Claude Code は :4001 経由** — :8000はサーバー内部デバッグのみ

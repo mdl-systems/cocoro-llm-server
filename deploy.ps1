@@ -1,23 +1,23 @@
-﻿# =============================================================================
+# =============================================================================
 # deploy.ps1 — cocoro-llm-server
-# Windows → リモートサーバ (192.168.50.112) ファイル同期スクリプト
+# Windows → リモートサーバー ファイル同期スクリプト
 #
 # 前提:
 #   - WSL2 がインストール済み
-#   - SSH鍵が ~/.ssh/id_rsa（またはid_ed25519）に設定済み
+#   - SSH鍵が ~/.ssh/id_ed25519 に設定済み
 #   - リモートに rsync がインストール済み
 #
 # 使用方法:
-#   .\deploy.ps1                   # 通常同期
-#   .\deploy.ps1 -DryRun           # 変更内容をプレビューのみ（実際には同期しない）
-#   .\deploy.ps1 -Restart          # 同期後にDockerサービスを再起動
+#   .\deploy.ps1 -RemoteUser "your-user" -RemoteHost "192.168.x.x"  # 通常同期
+#   .\deploy.ps1 -RemoteUser "your-user" -RemoteHost "192.168.x.x" -DryRun    # プレビューのみ
+#   .\deploy.ps1 -RemoteUser "your-user" -RemoteHost "192.168.x.x" -Restart   # 同期後Docker再起動
 # =============================================================================
 
 param(
     [switch]$DryRun,
     [switch]$Restart,
-    [string]$RemoteUser = "abtr1094",
-    [string]$RemoteHost = "192.168.50.112",
+    [Parameter(Mandatory=$true)][string]$RemoteUser,
+    [Parameter(Mandatory=$true)][string]$RemoteHost,
     [string]$RemotePath = "~/cocoro-llm-server"
 )
 
@@ -106,7 +106,6 @@ if ($Restart -and -not $DryRun) {
 
 Write-Ok "=== デプロイ完了 ==="
 if (-not $DryRun) {
-    Write-Info "Open WebUI: http://${RemoteHost}:3000"
     Write-Info "LiteLLM API: http://${RemoteHost}:4000"
     Write-Info "ヘルスチェック: curl http://${RemoteHost}:4000/health/liveliness"
 }

@@ -4,9 +4,8 @@
 # 全サービス死活監視 + VRAM使用量ログ
 #
 # チェック対象:
-#   - vLLM Primary  (port 8080)
-#   - vLLM Secondary (port 8081)
-#   - LiteLLM Gateway (port 8000)
+#   - vLLM Primary  (port 8000)
+#   - LiteLLM Gateway (port 4000)
 #   - VRAM使用量
 #
 # 実行方法:
@@ -24,9 +23,8 @@ LOG_DIR="/var/log/cocoro-llm"
 LOG_FILE="${LOG_DIR}/health.log"
 TIMEOUT=10  # 秒
 
-PRIMARY_URL="http://localhost:8080/health"
-SECONDARY_URL="http://localhost:8081/health"
-LITELLM_URL="http://localhost:8000/health"
+VLLM_URL="http://localhost:8000/health"
+LITELLM_URL="http://localhost:4000/health/liveliness"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -67,7 +65,7 @@ check_http() {
 check_models() {
     local name="$1"
     local base_url="$2"
-    local models_url="${base_url%/health}/v1/models"
+    local models_url="${base_url%/health*}/v1/models"
 
     local response
     response=$(curl -s --max-time "$TIMEOUT" "$models_url" 2>/dev/null || echo "")
@@ -92,15 +90,18 @@ log "━━━━━━━━━━━━━━━━━━━━━━━━━
 # ── vLLM チェック ─────────────────────────────────────────────────────────────
 log ""
 log "[INFO] vLLM サービス確認..."
-check_http "vLLM Primary  (Scout 109B :8080)" "$PRIMARY_URL"
-check_http "vLLM Secondary (Qwen 32B  :8081)" "$SECONDARY_URL"
-check_http "LiteLLM Gateway          (:8000)" "$LITELLM_URL"
+check_http "vLLM Primary  (Qwen3-Coder-Next-FP8 :8000)" "$VLLM_URL"
+
+# ── LiteLLM チェック ─────────────────────────────────────────────────────────
+log ""
+log "[INFO] LiteLLM Gateway確認..."
+check_http "LiteLLM Gateway (:4000)" "$LITELLM_URL"
 
 # ── モデルリスト ──────────────────────────────────────────────────────────────
 log ""
 log "[INFO] モデルリスト確認..."
-check_models "vLLM Primary " "http://localhost:8080/health"
-check_models "LiteLLM      " "http://localhost:8000/health"
+check_models "vLLM Primary" "http://localhost:8000/health"
+check_models "LiteLLM     " "http://localhost:4000/health/liveliness"
 
 # ── VRAM使用量 ────────────────────────────────────────────────────────────────
 log ""
@@ -129,7 +130,7 @@ fi
 log ""
 log "[INFO] Dockerサービス確認..."
 if command -v docker &>/dev/null; then
-    for svc in litellm prometheus grafana; do
+    for svc in vllm-primary litellm; do
         if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${svc}$"; then
             log "${GREEN}[OK]${NC}    Docker: ${svc} 稼働中"
         else
