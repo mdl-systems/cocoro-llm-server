@@ -246,8 +246,8 @@ EOF
     chmod 644 /etc/profile.d/cuda.sh
     log_ok "環境変数設定ファイル作成: /etc/profile.d/cuda.sh"
 
-    # mdlユーザーの .bashrc にも追記（sudoなしで使えるように）
-    local target_user="mdl"
+    # 実行ユーザーの .bashrc にも追記（sudoなしで使えるように）
+    local target_user="${SUDO_USER:-$(logname 2>/dev/null || echo "mdl")}"
     local bashrc="/home/${target_user}/.bashrc"
 
     if [[ -f "$bashrc" ]]; then
@@ -343,12 +343,13 @@ print_summary() {
     echo "      Compute: 12.0"
     echo ""
     echo "  4️⃣  確認後、次のセットアップへ:"
-    echo "      bash scripts/setup_vllm.sh"
+    echo "      sudo bash scripts/setup_docker.sh   ← Docker + NVIDIA Container Toolkit"
+    echo "      bash scripts/first_setup.sh          ← .env生成 + 全サービス起動"
     echo ""
     echo -e "${YELLOW}【注意】vLLM on Blackwell:${NC}"
     echo "  - CUDA 12.8 インストール済み ✓"
     echo "  - TORCH_CUDA_ARCH_LIST=\"12.0\" 設定済み ✓"
-    echo "  - vLLMはソースビルドが必要 (scripts/setup_vllm.sh で対応予定)"
+    echo "  - vLLM は docker compose で自動起動（ソースビルド不要）"
     echo ""
 }
 
