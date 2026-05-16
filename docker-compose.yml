@@ -29,7 +29,9 @@ services:
       - HF_HOME=${HF_CACHE_DIR:-/hf_cache}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
     volumes:
-      - ${HF_CACHE_DIR:-./hf_cache}:/hf_cache
+      # 既定は絶対 /hf_cache（HF_HOME と一致させる。相対 ./hf_cache だと
+      # 実キャッシュを取り違えてモデル再DLする事故になるため統一）
+      - ${HF_CACHE_DIR:-/hf_cache}:/hf_cache
       - /models:/models
     ports:
       - "8000:8000"
@@ -67,7 +69,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 300s
+      # コールドスタートは モデルロード+コンパイル+マルチモーダルwarmup で
+      # 約5分かかる。300s だとデプロイ毎に偽 unhealthy + litellm依存エラーに
+      # なるため余裕を持って 600s。
+      start_period: 600s
 
   # ---------------------------------------------------------------------------
   # LiteLLM Gateway — OpenAI互換プロキシ
