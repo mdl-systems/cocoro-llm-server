@@ -12,6 +12,37 @@ model_list:
       stream_timeout: 300
 
   # ──────────────────────────────────────────────────────────
+  # interactive — 人間が直接対話するルート（高優先度）
+  # worker      — サブエージェント・ファンアウト用ルート（低優先度）
+  #
+  # 今は両方とも同じ vLLM(vllm-primary) を指す = 単一モデル高並列（これが本来の目的）。
+  # もし将来モデルを足したくなった場合の保険として、worker の api_base を
+  # 新エンドポイントへ差し替えるだけで物理二層化できる（再設計不要）。追加は未確定。
+  # priority: vLLM の --scheduling-policy priority と連動。小さいほど優先。
+  # ──────────────────────────────────────────────────────────
+  - model_name: interactive
+    litellm_params:
+      model: openai/qwen3-coder
+      api_base: "http://vllm-primary:8000/v1"
+      api_key: "dummy"
+      max_tokens: 32768
+      timeout: 300
+      stream_timeout: 300
+      extra_body:
+        priority: 0
+
+  - model_name: worker
+    litellm_params:
+      model: openai/qwen3-coder
+      api_base: "http://vllm-primary:8000/v1"
+      api_key: "dummy"
+      max_tokens: 32768
+      timeout: 300
+      stream_timeout: 300
+      extra_body:
+        priority: 100
+
+  # ──────────────────────────────────────────────────────────
   # Route 2: claude-sonnet — クラウド直接（難タスク手動指定）
   # ──────────────────────────────────────────────────────────
   - model_name: claude-sonnet
@@ -88,7 +119,9 @@ model_list:
 
 router_settings:
   routing_strategy: simple-shuffle
-  num_retries: 2
+  # エージェント用途: 重い長時間リクエストがタイムアウトすると
+  # リトライ=同じ高コスト処理の二重実行になり自滅する。1回に絞る。
+  num_retries: 1
   retry_after: 5
 
 general_settings:
@@ -104,7 +137,7 @@ litellm_settings:
   callbacks: []
   cache: false
   drop_params: true
-  num_retries: 2
+  num_retries: 1   # 上記と同理由: 長時間タスクの二重実行を避ける
   request_timeout: 300
 
 environment_variables:
