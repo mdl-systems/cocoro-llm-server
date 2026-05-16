@@ -1,6 +1,6 @@
 # =============================================================================
 # docker-compose.yml — cocoro-llm-server
-# Stack: vLLM (Qwen3-Coder-Next-FP8) + LiteLLM
+# Stack: vLLM (Qwen3.6-35B-A3B-FP8 / マルチモーダル) + LiteLLM
 #
 # 起動: docker compose up -d
 # ログ: docker compose logs -f vllm-primary
@@ -9,9 +9,9 @@
 
 services:
   # ---------------------------------------------------------------------------
-  # vLLM Primary — Qwen3-Coder-Next-FP8
+  # vLLM Primary — Qwen3.6-35B-A3B-FP8 (マルチモーダル: テキスト/コード + 画像/動画)
   # Port: 8000 (LAN debug), internally :8000
-  # VRAM: ~70GB weights + ~20GB KV cache @ gpu_util=0.92
+  # VRAM: ~35GB weights (FP8) + KV cache @ gpu_util=0.92
   # ---------------------------------------------------------------------------
   vllm-primary:
     image: vllm/vllm-openai:latest
@@ -33,7 +33,7 @@ services:
     ports:
       - "8000:8000"
     command: >
-      --model ${PRIMARY_MODEL_PATH:-Qwen/Qwen3-Coder-Next-FP8}
+      --model ${PRIMARY_MODEL_PATH:-Qwen/Qwen3.6-35B-A3B-FP8}
       --served-model-name qwen3-coder
       --host 0.0.0.0
       --port 8000
@@ -49,6 +49,7 @@ services:
       --enable-prefix-caching
       --enable-auto-tool-choice
       --tool-call-parser qwen3_coder
+      --reasoning-parser qwen3
       --trust-remote-code
       --no-enable-log-requests
     deploy:

@@ -46,6 +46,27 @@ def tool_result_content(content) -> str:
     return str(content) if content else ""
 
 
+def image_block_to_openai(block: dict):
+    """Anthropic の image ブロックを OpenAI の image_url パートへ変換。失敗時 None。"""
+    source = block.get("source", {})
+    if not isinstance(source, dict):
+        return None
+    stype = source.get("type")
+    if stype == "base64":
+        media = source.get("media_type", "image/png")
+        data = source.get("data", "")
+        if not data:
+            return None
+        return {"type": "image_url",
+                "image_url": {"url": f"data:{media};base64,{data}"}}
+    if stype == "url":
+        url = source.get("url", "")
+        if not url:
+            return None
+        return {"type": "image_url", "image_url": {"url": url}}
+    return None
+
+
 # ── Anthropic → OpenAI メッセージ変換 ────────────────────────
 
 def to_openai_messages(messages: list, system=None) -> list:
@@ -91,7 +112,12 @@ def to_openai_messages(messages: list, system=None) -> list:
         elif role == "user":
             tool_results = []
             text_parts = []
+            image_parts = []
             for block in content:
+                if isinstance(block, str):
+                    if block:
+                        text_parts.append(block)
+                    continue
                 btype = block.get("type", "")
                 if btype == "tool_result":
                     tool_results.append({
@@ -101,11 +127,21 @@ def to_openai_messages(messages: list, system=None) -> list:
                     })
                 elif btype in ("text", "input_text") and block.get("text"):
                     text_parts.append(block["text"])
-                elif isinstance(block, str) and block:
-                    text_parts.append(block)
+                elif btype == "image":
+                    img = image_block_to_openai(block)
+                    if img:
+                        image_parts.append(img)
 
             result.extend(tool_results)
-            if text_parts:
+            if image_parts:
+                print(f"[proxy] IMAGE detected: {len(image_parts)} image part(s) in user message", flush=True)
+                parts = []
+                joined = "\n".join(text_parts)
+                if joined:
+                    parts.append({"type": "text", "text": joined})
+                parts.extend(image_parts)
+                result.append({"role": "user", "content": parts})
+            elif text_parts:
                 result.append({"role": "user", "content": "\n".join(text_parts)})
             elif not tool_results:
                 text = content_to_text(content)

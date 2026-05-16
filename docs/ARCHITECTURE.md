@@ -23,7 +23,7 @@
        ▼                ▼
   :8000 (内部)      Anthropic API
   vLLM Primary     (fallbackのみ)
-  Qwen3-Coder-Next-FP8
+  Qwen3.6-35B-A3B-FP8 (マルチモーダル)
 ```
 
 **3つのコンテナ構成（docker-compose）**:
@@ -48,26 +48,32 @@
 
 ---
 
-## 3. モデル — Qwen3-Coder-Next-FP8
+## 3. モデル — Qwen3.6-35B-A3B-FP8（マルチモーダル）
 
 ### 採用理由
 
 | 要件 | 評価 | 詳細 |
 |---|---|---|
-| コーディング特化 | ✅ | Coder専用アーキテクチャ |
-| VRAM効率 | ✅ | FP8量子化で ~70 GiB |
-| コンテキスト長 | ✅ | 256K tokens |
-| ツールコール対応 | ✅ | `qwen3_coder` parser |
-| OpenAI互換 | ✅ | vLLM の OpenAI互換APIで提供 |
+| コーディング/ツール対応 | ✅ | `qwen3_coder` parser そのまま使える |
+| 画像・動画入力 | ✅ | マルチモーダル（Vision Encoder 内蔵）。1モデルでテキスト+画像+動画 |
+| VRAM効率 | ✅ | FP8量子化で ~35 GiB（旧 70GiB から半減）|
+| コンテキスト長 | ✅ | 256K tokens（YaRN で最大 ~1M） |
+| OpenAI互換 | ✅ | vLLM の OpenAI互換APIで提供（image_url 入力対応） |
+
+> 旧構成では「テキスト用 + 画像用」を2モデル併設する想定だったが、本モデルが
+> マルチモーダルのため **1モデル・1コンテナで画像/動画も処理可能**。構成を据え置いたまま差し替えできる。
 
 ### VRAM 配分
 
 ```
 GPU VRAM: 94.96 GiB
-├── Qwen3-Coder-Next-FP8 ウェイト : ~70 GiB  (FP8)
-├── KV キャッシュ (fp8)            : ~17 GiB  (gpu_util=0.92)
+├── Qwen3.6-35B-A3B-FP8 ウェイト  : ~35 GiB  (FP8, 35B total / 3B active MoE)
+├── KV キャッシュ (fp8)            : 残り大部分 (gpu_util=0.92)
 └── CUDA オーバーヘッド            : ~8 GiB
 ```
+
+> MoE は active が 3B でも **全 35B を VRAM 常駐**させる必要がある（どの expert を使うかは
+> トークンごとに変わるため）。容量計算はあくまで total 35B 基準。
 
 設定変更時は `.env` の `PRIMARY_GPU_UTIL` で調整可能（デフォルト `0.92`）。
 
@@ -112,6 +118,11 @@ claude-sonnet（クラウド直結）
 
 OpenCode / Claude Code はファイル操作・コマンド実行を「ツールコール」として LLM に指示します。Qwen3-Coder は独自フォーマットで出力するため、このパーサーがないとツール機能が完全に壊れます。
 
+### `--reasoning-parser qwen3`
+
+Qwen3.6 は思考モード（`<think>` タグ）を持つため、このパーサーがないと思考過程が
+そのまま応答に混入し、ツールコール出力も乱れる。Qwen 公式が明示的に推奨。
+
 ### `--enable-prefix-caching`
 
 各クライアントは同一のシステムプロンプトを毎回送信します。Prefix Caching があれば再計算をスキップできるため、レイテンシが3〜5倍違います。256K コンテキストでは特に致命的。
@@ -145,3 +156,4 @@ FP8 KV キャッシュにより、同じ VRAM で約 2 倍のバッチサイズ�
 | 2026-05-05 | smart-coder ルート追加 | 自動フォールバックで可用性向上 |
 | 2026-05-08 | **anthropic-proxy 追加** | Claude Code 対応（Anthropic↔OpenAI 変換） |
 | 2026-05-11 | Tailscale をネットワーク前提に追加 | リモート利用・サブネット間接続対応 |
+| 2026-05-16 | **Qwen3.6-35B-A3B-FP8 に移行** | マルチモーダル（画像/動画）対応・VRAM 70→35GB・構成据え置きで差し替え可 |

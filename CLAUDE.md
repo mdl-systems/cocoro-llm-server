@@ -10,7 +10,7 @@
 **ローカルLLM推論サーバー** — OpenAI互換 API (:4000) と Anthropic互換 API (:4001) を提供し、
 OpenCode・Claude Code・OpenHands等のAIコーディングツールから接続して使う基盤。
 
-- Primary Model: **Qwen3-Coder-Next-FP8**（VRAM ~70GB weights + ~17GB KV fp8、256K context）
+- Primary Model: **Qwen3.6-35B-A3B-FP8**（マルチモーダル: テキスト/コード + 画像/動画。VRAM ~35GB weights FP8、256K context）
 - Gateway: LiteLLM（OpenAI互換 :4000）+ anthropic-proxy（Anthropic互換 :4001）
 - コンテナ管理: Docker Compose（`docker compose up -d` で全サービス起動）
 
@@ -65,6 +65,7 @@ OpenCode・Claude Code・OpenHands等のAIコーディングツールから接�
 - **モデルウェイトをgitにコミットしない** — `.gitignore` で除外済み
 - **APIキーを平文でコードに書かない** — 必ず `.env` 経由
 - **`--tool-call-parser qwen3_coder` を外さない** — ツールコール（ファイル操作等）が壊れる
+- **`--reasoning-parser qwen3` を外さない** — Qwen3.6 の思考モード解釈に必要（Qwen公式推奨）
 - **`--enable-prefix-caching` を外さない** — KVキャッシュ効率の生命線
 - **OpenAI互換クライアントは :4000、Claude Code は :4001 経由** — :8000 はサーバー内部デバッグ用のみ
 - **VRAM配分を変える場合は docs/ARCHITECTURE.md を先に更新**
@@ -176,3 +177,4 @@ ANTHROPIC_API_KEY:  <LITELLM_MASTER_KEY の値>
 | 2026-05-07 | Open WebUI・モニタリングを最小構成から除外。 |
 | 2026-05-08 | anthropic-proxy 追加（Claude Code 対応）。 |
 | 2026-05-11 | リポジトリ最小構成へ整理。Tailscale をネットワーク前提に追加。AIエージェント向け実行順序を明記。 |
+| 2026-05-16 | **Qwen3.6-35B-A3B-FP8 に移行**（マルチモーダル: 画像/動画対応、VRAM 70→35GB）。`--reasoning-parser qwen3` 追加。 |
