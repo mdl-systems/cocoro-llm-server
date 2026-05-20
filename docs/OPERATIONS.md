@@ -45,39 +45,109 @@
 
 ### 🟢 同じモデルファミリーで別バージョン（例: Qwen3.6 の別サイズ）
 
-| 編集箇所 | 値 |
-|---|---|
-| `docker-compose.yml` の `x-config:` | `HF_MODEL` |
+`docker-compose.yml` の `x-config:` の `HF_MODEL` だけを変える。parser や量子化方式はそのままで OK。
 
-parser や量子化方式はそのままで OK。
+例:
+```yaml
+# Before
+HF_MODEL: "Qwen/Qwen3.6-35B-A3B-FP8"
+# After (小型版に変える)
+HF_MODEL: "Qwen/Qwen3.6-7B-FP8"
+```
 
 ### 🟡 別の量子化方式（FP8 → AWQ / GPTQ 等）
 
-| 編集箇所 | 値 |
-|---|---|
-| `docker-compose.yml` の `x-config:` | `HF_MODEL` / `QUANTIZATION` / `KV_CACHE_DTYPE` を該当モデルに合わせて変更 |
+`HF_MODEL` / `QUANTIZATION` / `KV_CACHE_DTYPE` の 3 つをセットで変える。
+
+例:
+```yaml
+# Before (FP8)
+HF_MODEL:       "Qwen/Qwen3.6-35B-A3B-FP8"
+QUANTIZATION:   "fp8"
+KV_CACHE_DTYPE: "fp8"
+# After (AWQ に変える)
+HF_MODEL:       "Qwen/Qwen3.6-35B-A3B-AWQ"
+QUANTIZATION:   "awq"
+KV_CACHE_DTYPE: "auto"
+```
 
 ### 🔴 別系統のモデル（Llama / Mistral / DeepSeek 等）
 
-ツールコール形式が違うので、モデル定義ブロックをまとめて差し替え:
+ツールコール形式が違うので `HF_MODEL` / `TOOL_CALL_PARSER` / `REASONING_PARSER` をまとめて差し替え:
 
-| 編集箇所 | 値 |
-|---|---|
-| `docker-compose.yml` の `x-config:` | `HF_MODEL` / `TOOL_CALL_PARSER` / `REASONING_PARSER` を該当モデル向けに（例: Llama なら `llama3_json`、思考モード非対応モデルなら `REASONING_PARSER` の値は空文字 or 設計見直し） |
+例:
+```yaml
+# Before (Qwen系)
+HF_MODEL:          "Qwen/Qwen3.6-35B-A3B-FP8"
+TOOL_CALL_PARSER:  "qwen3_coder"
+REASONING_PARSER:  "qwen3"
+# After (Llama系に変える)
+HF_MODEL:          "meta-llama/Llama-3.3-70B-Instruct"
+TOOL_CALL_PARSER:  "llama3_json"
+REASONING_PARSER:  ""                # 思考モード非対応モデルなら空文字
+```
 
-LiteLLM 側 (`litellm/config.yaml.tmpl`) は `${SERVED_MODEL_NAME}` プレースホルダ経由でモデル名を受け取ってるので、公開名を変えない限り**触らなくていい**。
+LiteLLM 側 (`litellm/config.yaml.tmpl`) は `${SERVED_MODEL_NAME}` プレースホルダ経由でモデル名を受け取るので、公開名を変えない限り**触らなくていい**。
 
-### 🟢 VRAM 配分や並列数を変えたい
+### 🟢 コンテキスト総量を変えたい
 
-| 編集箇所 | 値 |
-|---|---|
-| `docker-compose.yml` の `x-config:` | `GPU_MEMORY_UTIL` / `MAX_MODEL_LEN` / `MAX_NUM_SEQS` |
+| 値 | 意味 | 目安 |
+|---|---|---|
+| `MAX_MODEL_LEN` | 1 リクエストの最大コンテキスト（トークン数） | モデルが対応する範囲内 / 大きいほど長文を扱えるが KV メモリ消費が増える |
+
+例:
+```yaml
+# Before (128K)
+MAX_MODEL_LEN: "131072"
+# 短文中心で並列を稼ぎたい
+MAX_MODEL_LEN: "32768"     # 32K
+# 長文を扱いたい
+MAX_MODEL_LEN: "262144"    # 256K
+```
+
+> KV キャッシュ消費は `MAX_MODEL_LEN × MAX_NUM_SEQS` に比例。長くしすぎると並列数を下げないと OOM。
+
+### 🟢 並列リクエスト数を変えたい
+
+| 値 | 意味 | 目安 |
+|---|---|---|
+| `MAX_NUM_SEQS` | 同時に処理する最大リクエスト数 | 大きいほど並列性高いが各リクエストの KV 領域が圧縮される |
+
+例:
+```yaml
+# Before
+MAX_NUM_SEQS: "16"
+# サブエージェントを大量並列にしたい
+MAX_NUM_SEQS: "32"
+# 1 リクエスト当たりの応答速度を優先したい
+MAX_NUM_SEQS: "8"
+```
+
+### 🟢 VRAM 使用率を変えたい
+
+| 値 | 意味 | 目安 |
+|---|---|---|
+| `GPU_MEMORY_UTIL` | vLLM が使う GPU メモリの割合 | 0.5 〜 0.95 / 大きいほど KV キャッシュ確保が増えて並列耐性向上、ただし OOM リスクも上がる |
+
+例:
+```yaml
+# Before
+GPU_MEMORY_UTIL: "0.70"
+# 余裕を削って並列耐性を上げる
+GPU_MEMORY_UTIL: "0.85"
+# 他のプロセスにも GPU を譲りたい
+GPU_MEMORY_UTIL: "0.50"
+```
 
 ### 🟢 使う GPU を変えたい（複数 GPU 搭載時）
 
-| 編集箇所 | 値 |
-|---|---|
-| `docker-compose.yml` の `x-config:` | `CUDA_VISIBLE_GPU`（例: `"0"` → `"1"` で 2 枚目の GPU） |
+例:
+```yaml
+# Before (1 枚目)
+CUDA_VISIBLE_GPU: "0"
+# After (2 枚目に変える)
+CUDA_VISIBLE_GPU: "1"
+```
 
 ### 🟢 LiteLLM のルーティングや新エイリアスを追加したい
 
