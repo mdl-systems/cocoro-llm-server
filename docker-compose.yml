@@ -1,78 +1,90 @@
 # =============================================================================
 # docker-compose.yml — cocoro-llm-server
-# Stack: vLLM (Qwen3.6-35B-A3B-FP8 / マルチモーダル) + LiteLLM
+# Stack: vLLM + LiteLLM + anthropic-proxy
 #
 # 起動: docker compose up -d
 # ログ: docker compose logs -f vllm-primary
 # 停止: docker compose down
-#
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🏷  ローカルモデルの公開名を変えるには、下の SERVED_MODEL_NAME=... の値 1 箇所
-#    を書き換えて docker compose down && docker compose up -d するだけ。
-#    クライアント側で `coco-local` を直接呼んでいる箇所も新しい名前へ更新が必要。
-#    smart-coder / claude-* / gpt-* エイリアスはそのまま動くので、それらを
-#    使っているクライアントは無修正で済む。
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # =============================================================================
 
-# 単一の源泉 (single source of truth)。ここから vllm-primary と litellm の
-# 両 environment ブロックに同じ値が注入される。
-x-served-model-name: &served_model_name "SERVED_MODEL_NAME=coco-local"
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ ⚙  編集ポイント — 設定を変えたい時は **このブロックだけ** 触る           ║
+# ║                                                                          ║
+# ║   下の services: 以下の本体は二度と編集不要。                            ║
+# ║   編集後は: docker compose down && docker compose up -d                  ║
+# ║                                                                          ║
+# ║   詳細は docs/OPERATIONS.md の「変更パターン別の編集箇所」を参照。       ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+x-config: &config
+  # ── モデル定義（系統を変える時はここ全部を差し替え）──────────────────────
+  # 例: Llama に変えるなら HF_MODEL を差し替え、 TOOL_CALL_PARSER を
+  #     "llama3_json" 等に、REASONING_PARSER は外す/合わせる。
+  HF_MODEL:           "Qwen/Qwen3.6-35B-A3B-FP8"  # HuggingFace のモデル ID
+  SERVED_MODEL_NAME:  "coco-local"                # クライアントから呼ぶ公開名
+  TOOL_CALL_PARSER:   "qwen3_coder"               # ツールコール解釈 (モデル系統依存)
+  REASONING_PARSER:   "qwen3"                     # 思考モード解釈   (モデル系統依存)
+  QUANTIZATION:       "fp8"                       # 量子化方式
+  KV_CACHE_DTYPE:     "fp8"                       # KV キャッシュ精度
+
+  # ── VRAM / 並列度チューニング ─────────────────────────────────────────────
+  GPU_MEMORY_UTIL:    "0.70"                      # VRAM 使用率 (0.5〜0.95)
+  MAX_MODEL_LEN:      "131072"                    # コンテキスト総量 (tokens)
+  MAX_NUM_SEQS:       "16"                        # 同時並列リクエスト数
+
+  # ── GPU 選択 ──────────────────────────────────────────────────────────────
+  CUDA_VISIBLE_GPU:   "0"                         # 複数 GPU を積んだ時はここ
 
 services:
   # ---------------------------------------------------------------------------
-  # vLLM Primary — Qwen3.6-35B-A3B-FP8 (マルチモーダル: テキスト/コード + 画像/動画)
-  # Port: 8000 (LAN debug), internally :8000
-  # VRAM: ~35GB weights (FP8) + KV ~24GB @ gpu_util=0.70 / 空き ~28GB
-  # チューニング値はここに直書き（.env には置かない＝git管理で一元化）
+  # vLLM Primary — ローカル推論エンジン本体
+  # Port: 8000 (LAN debug only — クライアントは :4000 / :4001 を使う)
   # ---------------------------------------------------------------------------
   vllm-primary:
     image: vllm/vllm-openai:latest
     container_name: vllm-primary
     runtime: nvidia
     environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - CUDA_HOME=/usr/local/cuda
-      # Blackwell SM120 最適化
-      - VLLM_ATTENTION_BACKEND=FLASHINFER
-      - VLLM_WORKER_MULTIPROC_METHOD=spawn
-      - VLLM_USE_V1=1
-      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-      - HF_HOME=${HF_CACHE_DIR:-/hf_cache}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
-      - *served_model_name
+      <<: *config       # ↑ x-config の全キーをここに注入
+      # ↓ 以下は変更しない固定値（Blackwell SM120 最適化など）
+      NVIDIA_VISIBLE_DEVICES: "${CUDA_VISIBLE_GPU:-0}"
+      CUDA_HOME: "/usr/local/cuda"
+      VLLM_ATTENTION_BACKEND: "FLASHINFER"
+      VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+      VLLM_USE_V1: "1"
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+      HF_HOME: "${HF_CACHE_DIR:-/hf_cache}"
+      HUGGING_FACE_HUB_TOKEN: "${HF_TOKEN}"
     volumes:
-      # 既定は絶対 /hf_cache（HF_HOME と一致させる。相対 ./hf_cache だと
-      # 実キャッシュを取り違えてモデル再DLする事故になるため統一）
+      # 既定は絶対 /hf_cache (HF_HOME と一致させる)。
       - ${HF_CACHE_DIR:-/hf_cache}:/hf_cache
       - /models:/models
     ports:
       - "8000:8000"
-    # vllm-openai のデフォルト entrypoint (python -m vllm.entrypoints.openai.api_server)
-    # を sh -c でラップして $SERVED_MODEL_NAME を shell 展開できるようにする。
-    # $$ は compose で literal $ にエスケープされ、container shell で展開される。
+    # vllm-openai のデフォルト entrypoint を sh -c でラップして
+    # $VAR を container 内 shell で展開できるようにする。
+    # $$ は compose で literal $ にエスケープされる。
     entrypoint: ["sh", "-c"]
     command:
       - >
         exec python3 -m vllm.entrypoints.openai.api_server
-        --model Qwen/Qwen3.6-35B-A3B-FP8
+        --model "$$HF_MODEL"
         --served-model-name "$$SERVED_MODEL_NAME"
         --host 0.0.0.0
         --port 8000
         --dtype auto
-        --quantization fp8
-        --kv-cache-dtype fp8
-        --gpu-memory-utilization 0.70
-        --max-model-len 131072
-        --max-num-seqs 16
+        --quantization "$$QUANTIZATION"
+        --kv-cache-dtype "$$KV_CACHE_DTYPE"
+        --gpu-memory-utilization "$$GPU_MEMORY_UTIL"
+        --max-model-len "$$MAX_MODEL_LEN"
+        --max-num-seqs "$$MAX_NUM_SEQS"
         --block-size 32
         --tensor-parallel-size 1
         --enable-chunked-prefill
         --enable-prefix-caching
         --scheduling-policy priority
         --enable-auto-tool-choice
-        --tool-call-parser qwen3_coder
-        --reasoning-parser qwen3
+        --tool-call-parser "$$TOOL_CALL_PARSER"
+        --reasoning-parser "$$REASONING_PARSER"
         --trust-remote-code
         --no-enable-log-requests
     deploy:
@@ -88,18 +100,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      # コールドスタートは モデルロード+コンパイル+マルチモーダルwarmup で
-      # 約5分かかる。300s だとデプロイ毎に偽 unhealthy + litellm依存エラーに
-      # なるため余裕を持って 600s。
+      # コールドスタートは モデルロード+コンパイル+warmup で約5分。
+      # 余裕を持って 600s (これを縮めると毎回偽 unhealthy になる)。
       start_period: 600s
 
   # ---------------------------------------------------------------------------
-  # LiteLLM Gateway — OpenAI互換プロキシ
+  # LiteLLM Gateway — OpenAI 互換プロキシ
   # Port: 4000
-  # Routes: <SERVED_MODEL_NAME> / interactive / worker / smart-coder /
-  #         claude-sonnet / claude-sonnet-4-6 / claude-opus-4-7 /
-  #         claude-haiku-4-5-20251001 / gpt-4o / gpt-4o-mini
-  # config.yaml は config.yaml.tmpl から起動時に sed 展開される (entrypoint.sh)
+  # config.yaml.tmpl から起動時に sed で実値展開 (litellm/entrypoint.sh)
   # ---------------------------------------------------------------------------
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
@@ -108,10 +116,10 @@ services:
       vllm-primary:
         condition: service_healthy
     environment:
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - DATABASE_URL=null
-      - *served_model_name
+      <<: *config       # SERVED_MODEL_NAME を受け取るため（他のキーは使われない）
+      LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      DATABASE_URL: "null"
     volumes:
       - ./litellm/config.yaml.tmpl:/app/config.yaml.tmpl:ro
       - ./litellm/entrypoint.sh:/app/entrypoint.sh:ro
@@ -126,10 +134,9 @@ services:
       retries: 5
       start_period: 30s
 
-
   # ---------------------------------------------------------------------------
-  # Anthropic SSE Proxy — Claude Code向けSSE修正レイヤー
-  # Port: 4001 (Claude CodeのANTHROPIC_BASE_URLはここを向ける)
+  # anthropic-proxy — Claude Code 向け Anthropic → OpenAI 変換レイヤー
+  # Port: 4001 (Claude Code の ANTHROPIC_BASE_URL はここを向ける)
   # ---------------------------------------------------------------------------
   anthropic-proxy:
     build: ./gateway
@@ -140,7 +147,6 @@ services:
       - "4001:4001"
     restart: unless-stopped
     healthcheck:
-      # bootstrap はプロキシ内モックのため LiteLLM の状態に依存しない
       test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:4001/bootstrap\", timeout=3)' || exit 1"]
       interval: 30s
       timeout: 5s

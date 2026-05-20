@@ -20,6 +20,12 @@ _archive/
 .claude/settings.local.json
 .claude/worktrees/
 
+# ── メンテナ／サーバー固有のローカルメモ（クライアントには見せない）─────────
+# CLAUDE.local.md  = メンテナ運用ルール（GitHub 唯一の正・開発フロー等）
+# docs/SERVER.local.md = このサーバー固有の実値（GPU 型番・実測値等）
+CLAUDE.local.md
+docs/SERVER.local.md
+
 # ── モデルウェイト（4TB NVMeに格納、gitで管理しない）────────────────────────
 /models/
 *.gguf
