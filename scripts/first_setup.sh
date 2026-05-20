@@ -128,7 +128,7 @@ if [[ "$SKIP_ENV" == false ]]; then
     # ── HF_TOKEN（任意）────────────────────────────────────────────────────
     echo ""
     echo -e "${BOLD}【HuggingFace トークンについて】${NC}"
-    echo "  モデル（Qwen3-Coder-Next-FP8）を初めてダウンロードする場合に必要です。"
+    echo "  モデル（Qwen3.6-35B-A3B-FP8）を初めてダウンロードする場合に必要です。"
     echo "  → https://huggingface.co/settings/tokens で取得できます。"
     echo "  ※ すでにサーバーにモデルがある場合はスキップできます。"
     echo ""
@@ -173,17 +173,14 @@ if [[ "$SKIP_ENV" == false ]]; then
 ${HF_TOKEN_LINE}
 HF_CACHE_DIR=/hf_cache
 
-# ─── Primary vLLM 設定 ──────────────────────────────────────────────────────
-PRIMARY_MODEL_PATH=Qwen/Qwen3-Coder-Next-FP8
-PRIMARY_GPU_UTIL=0.92
-PRIMARY_MAX_MODEL_LEN=262144
-PRIMARY_MAX_NUM_SEQS=32
-
 # ─── LiteLLM ゲートウェイ ────────────────────────────────────────────────────
 LITELLM_MASTER_KEY=${MASTER_KEY}
 
 # ─── Anthropic（Claude フォールバック用）────────────────────────────────────
 ${ANTHROPIC_LINE}
+
+# モデル名・VRAM配分・並列数などのチューニングは docker-compose.yml に直書きされています。
+# .env には「秘密の値」だけを置く方針です（git管理で一元化）。
 EOF
 
     ok ".env を作成しました: ${ENV_PATH}"

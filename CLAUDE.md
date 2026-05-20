@@ -85,16 +85,18 @@ OpenCode・Claude Code・OpenHands等のAIコーディングツールから接�
                                                           (手編集しない)
 ```
 
+> 以下、`$REPO_DIR` はサーバー上でリポジトリをクローンしたパス（例: `~/cocoro-llm-server`）を指します。
+
 1. **コード/設定の変更は必ず GitHub 経由**。ローカル or 手元PCで編集 → commit → push。
-2. **サーバーは反映するだけ**: `cd /home/abtr1094/cocoro-llm-server && git pull && docker compose up -d`。
+2. **サーバーは反映するだけ**: `cd $REPO_DIR && git pull && docker compose up -d`。
    サーバー上で `docker-compose.yml` 等の追跡ファイルを直接編集してはいけない。
 3. **`.env` は秘密の値だけ**（`HF_TOKEN` / `LITELLM_MASTER_KEY` / `ANTHROPIC_API_KEY`）。
    git 管理外。サーバーで初回に1度だけ設定し、以後触らない。
    モデル選定・VRAM配分・並列数などのチューニングは `docker-compose.yml` に直書き。
 4. サーバーの git が `dubious ownership` で止まる場合は
-   `git config --global --add safe.directory /home/abtr1094/cocoro-llm-server`（root で1度）。
+   `git config --global --add safe.directory $REPO_DIR`（root で1度）。
 5. 破壊的な仕切り直しの前は必ずフルバックアップ:
-   `tar czf /root/cocoro-backup-$(date +%Y%m%d-%H%M%S).tgz -C /home/abtr1094 cocoro-llm-server`
+   `tar czf /root/cocoro-backup-$(date +%Y%m%d-%H%M%S).tgz -C "$(dirname $REPO_DIR)" "$(basename $REPO_DIR)"`
 
 > 接続はサーバーが鍵認証を受け付けないため Python paramiko で SSH する（Windows標準sshは不可）。
 

@@ -90,7 +90,7 @@ log "━━━━━━━━━━━━━━━━━━━━━━━━━
 # ── vLLM チェック ─────────────────────────────────────────────────────────────
 log ""
 log "[INFO] vLLM サービス確認..."
-check_http "vLLM Primary  (Qwen3-Coder-Next-FP8 :8000)" "$VLLM_URL"
+check_http "vLLM Primary  (Qwen3.6-35B-A3B-FP8 :8000)" "$VLLM_URL"
 
 # ── LiteLLM チェック ─────────────────────────────────────────────────────────
 log ""

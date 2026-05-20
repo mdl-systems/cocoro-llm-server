@@ -24,9 +24,9 @@
        ▼                ▼
   :8000 (内部)      Anthropic API
   vLLM Primary     (fallbackのみ)
-  Qwen3-Coder-Next-FP8
-  VRAM: 70GB+17GB KV
-  Context: 256K tokens
+  Qwen3.6-35B-A3B-FP8（マルチモーダル）
+  VRAM: 35GB weights + ~24GB KV
+  Context: 128K tokens
 ```
 
 **ポート構成:**
@@ -55,7 +55,7 @@
 | 項目 | 要件 |
 |---|---|
 | GPU | NVIDIA GPU（VRAM 24GB以上推奨） |
-| VRAM（推奨） | 94GB以上（Qwen3-Coder-Next-FP8 フル精度用） |
+| VRAM（推奨） | 64GB以上（Qwen3.6-35B-A3B-FP8 + 128Kコンテキスト用） |
 | OS | Linux（Ubuntu 22.04+ / Debian 12+） |
 | Docker | Docker Engine + NVIDIA Container Toolkit |
 
@@ -223,36 +223,45 @@ docker compose logs litellm -f
 
 | 用途 | 割当 | 備考 |
 |---|---|---|
-| Qwen3-Coder-Next-FP8 weights | ~70 GiB | FP8量子化 |
-| KV キャッシュ (fp8) | ~17 GiB | gpu_util=0.92 |
+| Qwen3.6-35B-A3B-FP8 weights | ~35 GiB | FP8量子化、35B total / 3B active MoE |
+| KV キャッシュ (fp8) | ~24 GiB | gpu_util=0.70・max-model-len=128K |
 | CUDA オーバーヘッド | ~8 GiB | バッファ |
+| **空き** | **~28 GiB** | 第2モデル増設や並列増強の余地 |
 
-> `.env` の `PRIMARY_GPU_UTIL` でVRAM割当を調整可能。
+> VRAM配分は `docker-compose.yml` の `--gpu-memory-utilization` / `--max-model-len` で調整します（git管理）。
 
 ---
 
 ## モデルを変えたい場合
 
-vLLM は起動時にモデルを HuggingFace から自動ダウンロードします（初回 5〜15分）。  
-変更したい場合の難易度別の手順:
+vLLM は起動時にモデルを HuggingFace から自動ダウンロードします（初回 5〜15分）。
 
-### 🟢 同じ系統で別バージョン（Qwen3-Coder の別サイズ等）
+**重要**: モデル設定は `docker-compose.yml` に直書きで一元化されています。
+**`.env` には設定しません**（`.env` は秘密の値だけ）。
+変更は **GitHub経由**（ローカルで編集 → commit → push → サーバーで `git pull && docker compose up -d`）が原則です。
 
-`.env` の編集だけでOK:
+### 🟢 同じ系統で別バージョン（Qwen3 の別サイズ等）
+
+`docker-compose.yml` の `vllm-primary` コマンドを編集:
+
+```yaml
+    command: >
+      --model Qwen/Qwen3.6-35B-A3B-FP8   # ← ここを変更
+      --served-model-name qwen3-coder
+      ...
+```
+
+そのあと:
 
 ```bash
-vim .env
-# PRIMARY_MODEL_PATH=Qwen/Qwen3-Coder-Next-FP8
-# ↓ 変更
-# PRIMARY_MODEL_PATH=Qwen/Qwen3-Coder-XXB-FP8
-
-docker compose down && docker compose up -d
-# 新モデルが自動DL → 起動
+git add docker-compose.yml && git commit -m "switch model" && git push
+# サーバー側で:
+git pull && docker compose down && docker compose up -d
 ```
 
 ### 🟡 別の量子化方式（FP8以外: AWQ / GPTQ 等）
 
-`.env` に加えて `docker-compose.yml` の vLLM フラグも調整が必要:
+`docker-compose.yml` の vLLM フラグも調整:
 
 | フラグ | 用途 | 例 |
 |---|---|---|
@@ -266,14 +275,15 @@ docker compose down && docker compose up -d
 
 1. `docker-compose.yml`:
    - `--tool-call-parser qwen3_coder` → モデル対応のものに変更（Llama なら `llama3_json` 等）
-   - `--served-model-name qwen3-coder` → 新モデル名に
-2. `litellm/config.yaml`: モデル名参照を更新（`openai/qwen3-coder` 部分）
+   - `--reasoning-parser qwen3` → モデルに合わせて変更 or 削除
+   - `--served-model-name qwen3-coder` は LiteLLM の参照名なので、変更する場合は ↓ も合わせて修正
+2. `litellm/config.yaml`: `model: openai/qwen3-coder` のモデル参照名を全箇所更新
 
 ### ⚠️ VRAM 上限
 
 GPU の VRAM（このサーバーは 94GB）を**超えるモデルは起動しません**。
-- ✅ ~70GB クラス（Qwen3-Coder-Next-FP8）
-- ✅ ~38GB クラス（Qwen2.5-72B-AWQ）
+- ✅ ~35GB クラス（Qwen3.6-35B-A3B-FP8 = 現行）
+- ✅ ~70GB クラス（Qwen3-Coder-Next-FP8 等の旧構成）
 - ❌ ~104GB（Llama-4-Scout-FP8）→ VRAM 超過で起動失敗
 - ❌ 数百GB級（DeepSeek-V3 671B 等）→ 動作不可
 
