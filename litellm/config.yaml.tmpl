@@ -1,10 +1,21 @@
+# =============================================================================
+# litellm/config.yaml.tmpl — LiteLLM 設定テンプレート
+#
+# このファイルは litellm/entrypoint.sh により ${SERVED_MODEL_NAME} を実値展開して
+# config.yaml にレンダリングされてから LiteLLM に読み込まれます。
+#
+# ローカルモデル名は docker-compose.yml の anchor `&served_model_name` で一元管理
+# されており（デフォルト: coco-local）、ここでは ${SERVED_MODEL_NAME} を参照する
+# だけで済みます。
+# =============================================================================
+
 model_list:
   # ──────────────────────────────────────────────────────────
-  # Route 1: qwen3-coder — ローカルvLLM（普段使い）
+  # Route 1: ローカル vLLM 直接ルート（普段使い・名前は SERVED_MODEL_NAME）
   # ──────────────────────────────────────────────────────────
-  - model_name: qwen3-coder
+  - model_name: ${SERVED_MODEL_NAME}
     litellm_params:
-      model: openai/qwen3-coder
+      model: openai/${SERVED_MODEL_NAME}
       api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 32768
@@ -22,7 +33,7 @@ model_list:
   # ──────────────────────────────────────────────────────────
   - model_name: interactive
     litellm_params:
-      model: openai/qwen3-coder
+      model: openai/${SERVED_MODEL_NAME}
       api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 32768
@@ -33,7 +44,7 @@ model_list:
 
   - model_name: worker
     litellm_params:
-      model: openai/qwen3-coder
+      model: openai/${SERVED_MODEL_NAME}
       api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 32768
@@ -58,7 +69,7 @@ model_list:
   # ──────────────────────────────────────────────────────────
   - model_name: smart-coder
     litellm_params:
-      model: openai/qwen3-coder
+      model: openai/${SERVED_MODEL_NAME}
       api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 32768
@@ -73,7 +84,7 @@ model_list:
   # ──────────────────────────────────────────────────────────
   - model_name: claude-sonnet-4-6
     litellm_params:
-      model: openai/qwen3-coder
+      model: openai/${SERVED_MODEL_NAME}
       api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 32768
@@ -82,7 +93,7 @@ model_list:
 
   - model_name: claude-opus-4-7
     litellm_params:
-      model: openai/qwen3-coder
+      model: openai/${SERVED_MODEL_NAME}
       api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 32768
@@ -91,7 +102,7 @@ model_list:
 
   - model_name: claude-haiku-4-5-20251001
     litellm_params:
-      model: openai/qwen3-coder
+      model: openai/${SERVED_MODEL_NAME}
       api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 16384
@@ -103,7 +114,7 @@ model_list:
   # ──────────────────────────────────────────────────────────
   - model_name: gpt-4o
     litellm_params:
-      model: openai/qwen3-coder
+      model: openai/${SERVED_MODEL_NAME}
       api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 32768
@@ -111,7 +122,7 @@ model_list:
 
   - model_name: gpt-4o-mini
     litellm_params:
-      model: openai/qwen3-coder
+      model: openai/${SERVED_MODEL_NAME}
       api_base: "http://vllm-primary:8000/v1"
       api_key: "dummy"
       max_tokens: 16384

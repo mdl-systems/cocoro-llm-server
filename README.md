@@ -16,8 +16,8 @@
         │    :4000     │              │  :4001              │
         │              │              │  Anthropic ↔ OpenAI │
         │ smart-coder  │              │  双方向変換         │
-        │ qwen3-coder  │              └─────────────────────┘
-        │ claude-sonnet│
+        │ coco-local * │              └─────────────────────┘
+        │ claude-sonnet│       * 公開名は SERVED_MODEL_NAME で変更可
         └──────┬───────┘
                │
        ┌───────┴────────┐
@@ -38,15 +38,20 @@
 
 ## モデルルーティング
 
+ローカルモデルの公開名は **`docker-compose.yml` の `x-served-model-name` アンカー1箇所で一元管理**されており、デフォルトは **`coco-local`**。下の表では `<MODEL>` と表記します。リネームは `docker-compose.yml` のその1行を書き換えて `docker compose down && docker compose up -d` するだけ。
+
 | モデル名 | バックエンド | 用途 |
 |---|---|---|
 | `smart-coder` | ローカル優先 → Claude自動フォールバック | **推奨デフォルト** |
-| `qwen3-coder` | vLLM ローカル直結 | 高速・プライバシー重視 |
+| `<MODEL>`（既定 `coco-local`） | vLLM ローカル直結 | 高速・プライバシー重視 |
 | `claude-sonnet` | Anthropic API直接 | 難タスク・品質最優先（要 `ANTHROPIC_API_KEY`） |
-| `claude-sonnet-4-6` / `claude-opus-4-7` / `claude-haiku-4-5-20251001` | qwen3-coder エイリアス | **Claude Code 互換用**（内部はローカル vLLM） |
-| `gpt-4o` / `gpt-4o-mini` | qwen3-coder エイリアス | 後方互換 |
+| `interactive` / `worker` | ローカル(優先度付き) | サブエージェント並列向け |
+| `claude-sonnet-4-6` / `claude-opus-4-7` / `claude-haiku-4-5-20251001` | ローカルエイリアス | **Claude Code 互換用**（内部はローカル vLLM） |
+| `gpt-4o` / `gpt-4o-mini` | ローカルエイリアス | 後方互換 |
 
-> **Claude Code 用エイリアスの仕組み**: Claude Code は接続先のモデルとして `claude-sonnet-4-6` 等を指定してきますが、anthropic-proxy → LiteLLM の経路で**実体は qwen3-coder（ローカル vLLM）に流される**ように設定済みです。Claude Code 側のUIには「Sonnet 4.6」と表示されますが、応答しているのはローカルモデルです。
+> **Claude Code 用エイリアスの仕組み**: Claude Code は接続先のモデルとして `claude-sonnet-4-6` 等を指定してきますが、anthropic-proxy → LiteLLM の経路で**実体はローカル vLLM に流される**ように設定済みです。Claude Code 側のUIには「Sonnet 4.6」と表示されますが、応答しているのはローカルモデルです。
+
+> **リネームの影響範囲**: クライアントが `coco-local` を**直接**呼んでいる箇所だけ新名に更新が必要。`smart-coder` / `claude-*` / `gpt-*` エイリアスを使っているクライアントは**無修正で動く**(推奨デフォルトは `smart-coder` なので大体これで済む)。
 
 ---
 
@@ -242,13 +247,15 @@ vLLM は起動時にモデルを HuggingFace から自動ダウンロードし�
 
 ### 🟢 同じ系統で別バージョン（Qwen3 の別サイズ等）
 
-`docker-compose.yml` の `vllm-primary` コマンドを編集:
+`docker-compose.yml` の `vllm-primary` コマンドの `--model` 行だけ編集:
 
 ```yaml
-    command: >
-      --model Qwen/Qwen3.6-35B-A3B-FP8   # ← ここを変更
-      --served-model-name qwen3-coder
-      ...
+    command:
+      - >
+        exec python3 -m vllm.entrypoints.openai.api_server
+        --model Qwen/Qwen3.6-35B-A3B-FP8   # ← ここを変更
+        --served-model-name "$$SERVED_MODEL_NAME"  # ← 変更不要(公開名は anchor 管理)
+        ...
 ```
 
 そのあと:
@@ -258,6 +265,10 @@ git add docker-compose.yml && git commit -m "switch model" && git push
 # サーバー側で:
 git pull && docker compose down && docker compose up -d
 ```
+
+> **公開名(クライアントから呼ぶ名前)を変えたい場合**は、`docker-compose.yml` 冒頭の
+> `x-served-model-name: &served_model_name "SERVED_MODEL_NAME=coco-local"` の
+> `coco-local` 部分を書き換えるだけ。vLLM と LiteLLM 両方に同じ値が伝搬される。
 
 ### 🟡 別の量子化方式（FP8以外: AWQ / GPTQ 等）
 
@@ -276,8 +287,10 @@ git pull && docker compose down && docker compose up -d
 1. `docker-compose.yml`:
    - `--tool-call-parser qwen3_coder` → モデル対応のものに変更（Llama なら `llama3_json` 等）
    - `--reasoning-parser qwen3` → モデルに合わせて変更 or 削除
-   - `--served-model-name qwen3-coder` は LiteLLM の参照名なので、変更する場合は ↓ も合わせて修正
-2. `litellm/config.yaml`: `model: openai/qwen3-coder` のモデル参照名を全箇所更新
+   - 公開名(`--served-model-name`)は `x-served-model-name` anchor で管理されているので、
+     変えたい場合は anchor 1 箇所のみ編集すれば vLLM と LiteLLM 両方に反映される
+2. `litellm/config.yaml.tmpl`: LiteLLM 設定はテンプレ。`${SERVED_MODEL_NAME}` プレースホルダ
+   を使っており、コンテナ起動時に `entrypoint.sh` が sed で実値展開する
 
 ### ⚠️ VRAM 上限
 

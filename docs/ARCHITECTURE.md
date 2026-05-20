@@ -15,7 +15,7 @@
         │    :4000     │              │  Anthropic ↔ OpenAI │
         │              │              │  双方向変換         │
         │ smart-coder  │              └─────────────────────┘
-        │ qwen3-coder  │
+        │ coco-local * │   * 公開名は SERVED_MODEL_NAME で変更可
         │ claude-sonnet│
         └──────┬───────┘
                │
@@ -95,11 +95,11 @@ GPU VRAM: 94.96 GiB
 
 ```
 smart-coder（推奨デフォルト）
-  ├─ Primary  : qwen3-coder (vLLM ローカル)
+  ├─ Primary  : ローカルvLLM (= ${SERVED_MODEL_NAME}, 既定 coco-local)
   └─ Fallback : claude-sonnet (Anthropic API)
   → コスト最小・信頼性最大
 
-qwen3-coder（ローカル直結）
+${SERVED_MODEL_NAME}（ローカル直結。既定名 coco-local）
   └─ vLLM :8000 直接
   → レイテンシ最小、プライバシー重視
 
@@ -108,7 +108,10 @@ claude-sonnet（クラウド直結）
   → vLLM が不安定時・難タスク用
 ```
 
-設定ファイル: [`litellm/config.yaml`](../litellm/config.yaml)
+ローカルモデルの公開名は `docker-compose.yml` の `x-served-model-name` アンカー 1 箇所で
+一元管理されており、変えれば vLLM の `--served-model-name` と LiteLLM の対応ルート名が
+同時に切り替わる。設定テンプレ: [`litellm/config.yaml.tmpl`](../litellm/config.yaml.tmpl)
+（コンテナ起動時に `entrypoint.sh` が sed で実値展開して config.yaml をレンダリング）。
 
 ---
 
@@ -175,3 +178,4 @@ FP8 KV キャッシュにより、同じ VRAM で約 2 倍のバッチサイズ�
 | 2026-05-11 | Tailscale をネットワーク前提に追加 | リモート利用・サブネット間接続対応 |
 | 2026-05-16 | **Qwen3.6-35B-A3B-FP8 に移行** | マルチモーダル（画像/動画）対応・VRAM 70→35GB・構成据え置きで差し替え可 |
 | 2026-05-16 | **エージェント並列ワークロード向けに再チューニング** | 目的はサブエージェント戦略（並列ファンアウト）を単一ローカルモデルで快適に成立させること。`GPU_UTIL` 0.92→0.70（過剰設定を現実値に。空く ~28GB は副産物で第2モデル追加は未確定）、`MAX_MODEL_LEN` 256K→128K、`MAX_NUM_SEQS` 32→16（実測前提）。`--scheduling-policy priority` で人間の対話を優先。LiteLLM に `interactive`/`worker` 論理2ルートを追加（将来モデルを足す場合の再設計回避の保険であって追加前提ではない）。オーバーエンジニアリング回避のため段階的アプローチ（まず単一モデル高並列→必要なら物理隔離） |
+| 2026-05-20 | **モデル公開名の一元化 (`coco-local` 既定)** | 旧 `qwen3-coder` という HF モデル名直結の公開名を廃止し、`docker-compose.yml` の `x-served-model-name` アンカー 1 箇所で管理。LiteLLM 設定はテンプレ化 (`config.yaml.tmpl`) し、起動時に `entrypoint.sh` が sed で `${SERVED_MODEL_NAME}` を展開。これによりモデル本体を差し替えても公開名/ルート名は影響を受けず、リネームしたい時も 1 行編集で全箇所に反映される |

@@ -10,6 +10,9 @@
 *.p12
 secrets/
 
+# ── LiteLLM ランタイム生成物（config.yaml.tmpl から sed 展開される）──────────
+litellm/config.yaml
+
 # ── アーカイブ（旧ファイル・個人情報・APIキー含む）──────────────────────────
 _archive/
 

@@ -5,7 +5,19 @@
 # 起動: docker compose up -d
 # ログ: docker compose logs -f vllm-primary
 # 停止: docker compose down
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🏷  ローカルモデルの公開名を変えるには、下の SERVED_MODEL_NAME=... の値 1 箇所
+#    を書き換えて docker compose down && docker compose up -d するだけ。
+#    クライアント側で `coco-local` を直接呼んでいる箇所も新しい名前へ更新が必要。
+#    smart-coder / claude-* / gpt-* エイリアスはそのまま動くので、それらを
+#    使っているクライアントは無修正で済む。
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # =============================================================================
+
+# 単一の源泉 (single source of truth)。ここから vllm-primary と litellm の
+# 両 environment ブロックに同じ値が注入される。
+x-served-model-name: &served_model_name "SERVED_MODEL_NAME=coco-local"
 
 services:
   # ---------------------------------------------------------------------------
@@ -28,6 +40,7 @@ services:
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
       - HF_HOME=${HF_CACHE_DIR:-/hf_cache}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - *served_model_name
     volumes:
       # 既定は絶対 /hf_cache（HF_HOME と一致させる。相対 ./hf_cache だと
       # 実キャッシュを取り違えてモデル再DLする事故になるため統一）
@@ -35,27 +48,33 @@ services:
       - /models:/models
     ports:
       - "8000:8000"
-    command: >
-      --model Qwen/Qwen3.6-35B-A3B-FP8
-      --served-model-name qwen3-coder
-      --host 0.0.0.0
-      --port 8000
-      --dtype auto
-      --quantization fp8
-      --kv-cache-dtype fp8
-      --gpu-memory-utilization 0.70
-      --max-model-len 131072
-      --max-num-seqs 16
-      --block-size 32
-      --tensor-parallel-size 1
-      --enable-chunked-prefill
-      --enable-prefix-caching
-      --scheduling-policy priority
-      --enable-auto-tool-choice
-      --tool-call-parser qwen3_coder
-      --reasoning-parser qwen3
-      --trust-remote-code
-      --no-enable-log-requests
+    # vllm-openai のデフォルト entrypoint (python -m vllm.entrypoints.openai.api_server)
+    # を sh -c でラップして $SERVED_MODEL_NAME を shell 展開できるようにする。
+    # $$ は compose で literal $ にエスケープされ、container shell で展開される。
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        exec python3 -m vllm.entrypoints.openai.api_server
+        --model Qwen/Qwen3.6-35B-A3B-FP8
+        --served-model-name "$$SERVED_MODEL_NAME"
+        --host 0.0.0.0
+        --port 8000
+        --dtype auto
+        --quantization fp8
+        --kv-cache-dtype fp8
+        --gpu-memory-utilization 0.70
+        --max-model-len 131072
+        --max-num-seqs 16
+        --block-size 32
+        --tensor-parallel-size 1
+        --enable-chunked-prefill
+        --enable-prefix-caching
+        --scheduling-policy priority
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_coder
+        --reasoning-parser qwen3
+        --trust-remote-code
+        --no-enable-log-requests
     deploy:
       resources:
         reservations:
@@ -77,7 +96,10 @@ services:
   # ---------------------------------------------------------------------------
   # LiteLLM Gateway — OpenAI互換プロキシ
   # Port: 4000
-  # Routes: qwen3-coder / claude-sonnet / smart-coder (fallback)
+  # Routes: <SERVED_MODEL_NAME> / interactive / worker / smart-coder /
+  #         claude-sonnet / claude-sonnet-4-6 / claude-opus-4-7 /
+  #         claude-haiku-4-5-20251001 / gpt-4o / gpt-4o-mini
+  # config.yaml は config.yaml.tmpl から起動時に sed 展開される (entrypoint.sh)
   # ---------------------------------------------------------------------------
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
@@ -89,11 +111,13 @@ services:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - DATABASE_URL=null
+      - *served_model_name
     volumes:
-      - ./litellm/config.yaml:/app/config.yaml:ro
+      - ./litellm/config.yaml.tmpl:/app/config.yaml.tmpl:ro
+      - ./litellm/entrypoint.sh:/app/entrypoint.sh:ro
     ports:
       - "4000:4000"
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    entrypoint: ["sh", "/app/entrypoint.sh"]
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:4000/health/liveliness\")'"]

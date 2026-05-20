@@ -115,15 +115,22 @@ OpenCode・Claude Code・OpenHands等のAIコーディングツールから接�
 
 ## モデルルーティング（LiteLLM）
 
+ローカルモデルの公開名は **`docker-compose.yml` の `x-served-model-name` アンカー1箇所で一元管理**
+されており、デフォルトは **`coco-local`**。変更すれば vLLM の `--served-model-name` と
+LiteLLM のローカル直結ルート名が同時に切り替わる。以下の表では `<MODEL>` と表記。
+
 | モデル名 | バックエンド | 用途 |
 |---|---|---|
-| `qwen3-coder` | vLLM ローカル | 普段使い（コーディング）|
+| `<MODEL>`（既定 `coco-local`） | vLLM ローカル | 普段使い（コーディング）|
 | `claude-sonnet` | Anthropic API | 難タスク・品質最優先（要 `ANTHROPIC_API_KEY`） |
 | `smart-coder` | ローカル優先 → Claude自動フォールバック | 信頼性重視ワークフロー |
-| `claude-sonnet-4-6` / `claude-opus-4-7` / `claude-haiku-4-5-20251001` | qwen3-coder エイリアス | **Claude Code 互換用**（内部はローカル vLLM） |
-| `gpt-4o` / `gpt-4o-mini` | qwen3-coder エイリアス | 後方互換 |
+| `interactive` / `worker` | ローカル(優先度付き) | サブエージェント並列向け |
+| `claude-sonnet-4-6` / `claude-opus-4-7` / `claude-haiku-4-5-20251001` | ローカルエイリアス | **Claude Code 互換用**（内部はローカル vLLM） |
+| `gpt-4o` / `gpt-4o-mini` | ローカルエイリアス | 後方互換 |
 
-> **Claude Code 用エイリアス**: Claude Code は `claude-sonnet-4-6` 等のモデル名を送ってきますが、LiteLLM 側で qwen3-coder にマップしているため、**実体はすべてローカルの vLLM が応答**します。Claude Code の UI に「Sonnet 4.6」と表示されてもローカル LLM 応答なのが正常動作。
+> **Claude Code 用エイリアス**: Claude Code は `claude-sonnet-4-6` 等のモデル名を送ってきますが、LiteLLM 側でローカル vLLM にマップしているため、**実体はすべてローカルの vLLM が応答**します。Claude Code の UI に「Sonnet 4.6」と表示されてもローカル LLM 応答なのが正常動作。
+
+> **リネーム手順**: `docker-compose.yml` の `x-served-model-name: &served_model_name "SERVED_MODEL_NAME=coco-local"` の `coco-local` 部分を書き換えて `docker compose down && docker compose up -d`。クライアント側で `coco-local` を直接呼んでいる箇所も合わせて新名に。smart-coder / claude-* / gpt-* エイリアスを使っているクライアントは無修正で動く。
 
 ---
 
@@ -158,7 +165,7 @@ curl -I http://localhost:4001/                  # anthropic-proxy
 curl http://localhost:4000/v1/chat/completions \
   -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen3-coder","messages":[{"role":"user","content":"こんにちは"}]}'
+  -d '{"model":"coco-local","messages":[{"role":"user","content":"こんにちは"}]}'
 
 # VRAM確認
 nvidia-smi --query-gpu=memory.used,memory.free,memory.total --format=csv
@@ -187,7 +194,7 @@ bash scripts/show_connection_info.sh
 ```
 API Base URL: http://<SERVER_IP>:4000/v1
 API Key:      <LITELLM_MASTER_KEY の値>
-Model:        smart-coder  (または qwen3-coder / gpt-4o)
+Model:        smart-coder  (または coco-local / gpt-4o)
 ```
 
 ### Claude Code（Anthropic互換）
@@ -213,3 +220,4 @@ ANTHROPIC_API_KEY:  <LITELLM_MASTER_KEY の値>
 | 2026-05-11 | リポジトリ最小構成へ整理。Tailscale をネットワーク前提に追加。AIエージェント向け実行順序を明記。 |
 | 2026-05-16 | **Qwen3.6-35B-A3B-FP8 に移行**（マルチモーダル: 画像/動画対応、VRAM 70→35GB）。`--reasoning-parser qwen3` 追加。 |
 | 2026-05-16 | サーバーを origin/main に仕切り直し（乖離解消）。**開発フロー＝GitHub唯一の正・サーバーpullのみ**を明文化。チューニング値を docker-compose.yml へ直書きし `.env` を秘密のみ化。エージェント並列向け再チューニング（`gpu_util` 0.92→0.70 / `max-model-len` 256K→128K / `max-num-seqs` 32→16 / `--scheduling-policy priority` / LiteLLM に interactive・worker ルート追加）。 |
+| 2026-05-20 | **モデル公開名を `coco-local` 既定に変更、`SERVED_MODEL_NAME` で一元管理**。`docker-compose.yml` の `x-served-model-name` アンカー1箇所が源泉。LiteLLM 設定を `config.yaml.tmpl` 化し、`litellm/entrypoint.sh` が起動時に sed で実値展開。これにより**1か所の編集で vLLM の `--served-model-name` と LiteLLM ローカルルート名が同時に切り替わる**設計に。HF モデル名 (`Qwen3.6-35B-A3B-FP8`) と公開ルート名が分離され、モデル差し替え時もクライアント設定は無修正（エイリアス経由なら）。 |
