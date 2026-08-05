@@ -270,3 +270,31 @@ docker compose restart litellm
 ### モデル DL が終わらない
 
 `HF_TOKEN` が正しいか確認。`.env` を見直して `docker compose down && docker compose up -d`。
+
+### Claude Code（:4001）の応答が空になる
+
+`anthropic-proxy` の変換前後をファイルに落として、上流の生の応答を見る。
+
+```bash
+# 1. 有効化（既定はオフ。会話全文が残るので切り分けの時だけ）
+echo 'PROXY_DUMP_DIR=/dumps' >> .env
+docker compose up -d anthropic-proxy
+docker compose logs anthropic-proxy | grep 'dump='   # dump=ON -> /dumps
+
+# 2. 再現させてからホスト側を読む（1リクエスト＝3ファイル）
+ls -lt /var/tmp/proxy-dumps/          # 01_request / 02_upstream / 03_downstream
+grep -l 'HTTP [45]' /var/tmp/proxy-dumps/*_02_upstream.*
+
+# 3. 戻す
+sed -i '/^PROXY_DUMP_DIR=/d' .env
+docker compose up -d anthropic-proxy
+```
+
+出力先はホストの `PROXY_DUMP_HOST_DIR`（既定 `/var/tmp/proxy-dumps`）。
+
+### 思考文が出力を食い潰して本文が空になる
+
+Qwen3 系は思考モードが既定オン。`:4001` は proxy が
+`chat_template_kwargs.enable_thinking=false` を送って**既定でオフ**にしている
+（`PROXY_ENABLE_THINKING=true` で戻る）。`:4000` を直接叩くクライアントは
+リクエストごとに `"chat_template_kwargs": {"enable_thinking": false}` を付ける。
