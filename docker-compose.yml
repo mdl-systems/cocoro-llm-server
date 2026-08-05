@@ -150,6 +150,8 @@ services:
       #         docker compose up -d anthropic-proxy
       # 出力先: ホストの PROXY_DUMP_HOST_DIR（既定 /var/tmp/proxy-dumps）
       PROXY_DUMP_DIR: "${PROXY_DUMP_DIR:-}"
+      # 思考モード。既定 false＝オフ（オンだと出力の大半を思考文が使い本文が空になる）。
+      PROXY_ENABLE_THINKING: "${PROXY_ENABLE_THINKING:-false}"
     volumes:
       - ${PROXY_DUMP_HOST_DIR:-/var/tmp/proxy-dumps}:/dumps
     ports:
