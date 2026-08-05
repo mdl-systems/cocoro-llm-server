@@ -143,6 +143,15 @@ services:
     container_name: anthropic-proxy
     depends_on:
       - litellm
+    environment:
+      # 変換前後のデバッグダンプ。既定は空＝オフ
+      # （会話全文がディスクに残るので常時は有効にしない）。
+      # 有効化: .env に PROXY_DUMP_DIR=/dumps を書いて
+      #         docker compose up -d anthropic-proxy
+      # 出力先: ホストの PROXY_DUMP_HOST_DIR（既定 /var/tmp/proxy-dumps）
+      PROXY_DUMP_DIR: "${PROXY_DUMP_DIR:-}"
+    volumes:
+      - ${PROXY_DUMP_HOST_DIR:-/var/tmp/proxy-dumps}:/dumps
     ports:
       - "4001:4001"
     restart: unless-stopped
