@@ -25,7 +25,20 @@ BACKEND = "http://litellm:4000"
 # を書き出す。既定は空＝オフ（会話全文がディスクに残るので常時有効にはしない）。
 
 DUMP_DIR = os.environ.get("PROXY_DUMP_DIR", "").strip()
-print(f"[proxy] dump={'ON -> ' + DUMP_DIR if DUMP_DIR else 'OFF'}", flush=True)
+
+
+# ── 思考モード ───────────────────────────────────────────────
+# Qwen3 系は思考モードが既定オン。Claude Code は max_tokens=32000 で投げてくるため、
+# 既定のままだと出力の大半を英語の思考文が使い、本文が空で返る（orca-ops #170 / #198 で実測）。
+# :4001 経由は既定で思考オフにし、chat_template_kwargs にして上流へ渡す。
+# 戻したいときは環境変数 PROXY_ENABLE_THINKING=true。
+# （クライアントが chat_template_kwargs を明示的に送ってきた場合はそちらを優先する）
+
+ENABLE_THINKING = os.environ.get("PROXY_ENABLE_THINKING", "").strip().lower() \
+    in ("1", "true", "yes", "on")
+
+print(f"[proxy] dump={'ON -> ' + DUMP_DIR if DUMP_DIR else 'OFF'} "
+      f"enable_thinking={ENABLE_THINKING}", flush=True)
 
 
 class DumpFile:
@@ -119,14 +132,26 @@ def image_block_to_openai(block: dict):
 
 def to_openai_messages(messages: list, system=None) -> list:
     result = []
+    sys_parts = []
     if system:
         sys_text = content_to_text(system) if isinstance(system, list) else system
         if sys_text:
-            result.append({"role": "system", "content": sys_text})
+            sys_parts.append(sys_text)
 
     for msg in messages:
         role = msg.get("role", "user")
         content = msg.get("content", "")
+
+        # Claude Code は messages の途中にも role="system" を混ぜて送ってくる
+        # （2026-08-05 実測: ツール定義付きのターンで user の後ろに1件）。
+        # Qwen3 系のチャットテンプレートはこれを
+        # 「System message must be at the beginning.」の 400 で弾くので、
+        # 先頭の system にまとめてから送る。
+        if role == "system":
+            sys_text = content if isinstance(content, str) else content_to_text(content)
+            if sys_text:
+                sys_parts.append(sys_text)
+            continue
 
         if isinstance(content, str):
             if content:
@@ -196,6 +221,8 @@ def to_openai_messages(messages: list, system=None) -> list:
                 if text:
                     result.append({"role": "user", "content": text})
 
+    if sys_parts:
+        result.insert(0, {"role": "system", "content": "\n\n".join(sys_parts)})
     return result
 
 
@@ -475,6 +502,12 @@ async def proxy(request: Request, path: str):
     if openai_tool_choice:
         oai_body["tool_choice"] = openai_tool_choice
 
+    # 思考モードの指定。クライアントが送ってきた値を優先し、無ければ既定を入れる。
+    ctk = body.get("chat_template_kwargs")
+    ctk = dict(ctk) if isinstance(ctk, dict) else {}
+    ctk.setdefault("enable_thinking", ENABLE_THINKING)
+    oai_body["chat_template_kwargs"] = ctk
+
     api_key = (headers.get("authorization") or
                f"Bearer {headers.get('x-api-key', '')}")
     oai_headers = {"Authorization": api_key, "Content-Type": "application/json"}
@@ -493,14 +526,38 @@ async def proxy(request: Request, path: str):
         up_dump = DumpFile(msg_id, "02_upstream.sse") if DUMP_DIR else None
         down_dump = DumpFile(msg_id, "03_downstream.sse") if DUMP_DIR else None
 
+        # 上流のステータスを見てから流し始める。
+        # 4xx/5xx をそのままストリーム変換すると「中身が1つも無い正常な応答」になり、
+        # Claude Code 側には「応答なし」としか見えなくなる（orca-ops #208）。
+        client = httpx.AsyncClient(timeout=httpx.Timeout(300))
+        req = client.build_request("POST", oai_url, headers=oai_headers,
+                                   content=json.dumps(oai_body, ensure_ascii=False).encode())
+        resp = await client.send(req, stream=True)
+
+        if resp.status_code != 200:
+            err_body = await resp.aread()
+            await resp.aclose()
+            await client.aclose()
+            err_text = err_body.decode("utf-8", errors="replace")
+            print(f"[proxy] upstream error {resp.status_code}: {err_text[:500]}", flush=True)
+            if up_dump:
+                up_dump.write(f"# HTTP {resp.status_code}\n\n{err_text}")
+                up_dump.close()
+            if down_dump:
+                down_dump.write(err_text)
+                down_dump.close()
+            return Response(content=err_body, status_code=resp.status_code,
+                            headers={"content-type": "application/json"})
+
         async def generate():
-            async with httpx.AsyncClient(timeout=httpx.Timeout(300)) as client:
-                async with client.stream("POST", oai_url, headers=oai_headers,
-                                         content=json.dumps(oai_body, ensure_ascii=False).encode(),
-                                         timeout=300) as resp:
-                    async for chunk in openai_stream_to_anthropic(resp, model, msg_id,
-                                                                  up_dump, down_dump):
-                        yield chunk
+            try:
+                async for chunk in openai_stream_to_anthropic(resp, model, msg_id,
+                                                              up_dump, down_dump):
+                    yield chunk
+            finally:
+                await resp.aclose()
+                await client.aclose()
+
         return StreamingResponse(generate(), media_type="text/event-stream")
     else:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300)) as client:
